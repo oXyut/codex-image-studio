@@ -49,7 +49,6 @@ describe("生成履歴", () => {
     const complete = job("完成画像");
     const context = studio([failed, otherFailed, complete, job("停止", { status: "cancelled", image: undefined })]);
     context.selectedId = failed.id;
-    vi.mocked(window.matchMedia).mockReturnValueOnce({ ...window.matchMedia("(min-width: 1280px)"), matches: true });
     const plan = { planToken: "confirmed", count: 2, nodes: [failed, otherFailed].map((source) => ({ ...source, title: source.prompt })) };
     vi.mocked(context.api).mockResolvedValueOnce(plan).mockResolvedValueOnce({ deletedIds: [failed.id, otherFailed.id], count: 2 });
     const user = userEvent.setup();
@@ -155,7 +154,7 @@ describe("生成履歴", () => {
     expect(screen.getByRole("searchbox", { name: "履歴を検索" })).toHaveValue("");
   });
 
-  it("画像選択ではプレビューや参照追加を行わず、独立したボタンから参照を追加する", async () => {
+  it("画像を1回クリックすると共通プレビューを開き、参照追加は独立して操作する", async () => {
     const source = job("森の家");
     const context = studio([source]);
     const user = userEvent.setup();
@@ -165,13 +164,24 @@ describe("生成履歴", () => {
       </StudioContext.Provider>,
     );
     await user.click(screen.getByRole("button", { name: "森の家を選択" }));
-    expect(context.select).toHaveBeenCalledWith(source.id);
-    expect(context.openPreview).not.toHaveBeenCalled();
+    expect(context.openPreview).toHaveBeenCalledExactlyOnceWith(source);
+    expect(context.select).not.toHaveBeenCalled();
     expect(context.addReference).not.toHaveBeenCalled();
     await user.click(
       screen.getByRole("button", { name: "森の家を参照に追加" }),
     );
     expect(context.addReference).toHaveBeenCalledWith(source);
+  });
+
+  it("画像のない生成中・失敗履歴も共通ビューアへ渡し、詳細を別UIに表示しない", async () => {
+    const source = job("失敗した画像", { status: "failed", image: undefined });
+    const context = studio([source]);
+    const user = userEvent.setup();
+    render(<StudioContext.Provider value={context}><HistoryView /></StudioContext.Provider>);
+    await user.click(screen.getByRole("button", { name: "失敗した画像を選択" }));
+    expect(context.openPreview).toHaveBeenCalledExactlyOnceWith(source);
+    expect(screen.queryByRole("complementary", { name: "選択した画像の詳細" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
   it("メモの検索と完成フィルターを組み合わせる", async () => {

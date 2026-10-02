@@ -57,6 +57,20 @@ function Probe() {
 }
 
 describe("お気に入りの共有状態", () => {
+  it("詳細から系統図へ移動するとビューアを閉じ、再度開くと画像を大きく表示する", async () => {
+    const user = userEvent.setup();
+    render(<StudioProvider><Probe /></StudioProvider>);
+    await screen.findByText("制作中の入力");
+    await user.click(screen.getByRole("button", { name: "プレビューを開く" }));
+    await user.click(screen.getByRole("button", { name: "詳細" }));
+    await user.click(screen.getByRole("button", { name: "系統図で見る" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "プレビューを開く" }));
+    expect(screen.getByRole("button", { name: "詳細" })).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("complementary")).not.toBeInTheDocument();
+    expect(api.mock.calls.every(([, options]) => !options?.method)).toBe(true);
+  });
+
   it("保存中の連打を防ぎ、結果・一覧・開いているプレビューに保存後の状態を反映する", async () => {
     let finish!: () => void;
     const pending = new Promise<void>((resolve) => { finish = resolve; });

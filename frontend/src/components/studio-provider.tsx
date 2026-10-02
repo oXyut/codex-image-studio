@@ -143,7 +143,7 @@ export function StudioProvider({ children }: { children: ReactNode }) {
     }));
   const navigate: StudioContextValue["navigate"] = (next, id, batchId) => {
     setView(next);
-    if (next === "create") setPreview(null);
+    setPreview(null);
     if (id) select(id);
     if (batchId !== undefined) setGraphBatchId(batchId);
   };
@@ -344,7 +344,10 @@ export function StudioProvider({ children }: { children: ReactNode }) {
         setFavoritePendingIds([...favoriteLocks.current]);
       }
     },
-    openPreview: setPreview,
+    openPreview: (source) => {
+      select(source.id);
+      setPreview(source);
+    },
     requestDelete: setDeleting,
     openTrash: () => setTrash(true),
     run,
@@ -354,7 +357,10 @@ export function StudioProvider({ children }: { children: ReactNode }) {
       {children}
       <StudioDialogs
         preview={preview}
-        onPreview={setPreview}
+        onPreview={(source) => {
+          if (source) select(source.id);
+          setPreview(source);
+        }}
         deleting={deleting}
         onDelete={setDeleting}
         trash={trash}

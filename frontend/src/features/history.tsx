@@ -24,14 +24,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
-import { ImageInspector } from "@/components/image-inspector";
 import { ImageFavoriteButton } from "@/components/image-actions";
 import { FailedJobsDeleteDialog } from "@/components/failed-jobs-delete-dialog";
 import { useStudio } from "@/lib/studio-context";
@@ -62,19 +54,6 @@ const filters: { value: HistoryFilter; label: string }[] = [
   { value: "active", label: "生成中" },
 ];
 
-function useWideScreen() {
-  const [wide, setWide] = useState(
-    () => window.matchMedia("(min-width: 1280px)").matches,
-  );
-  useEffect(() => {
-    const query = window.matchMedia("(min-width: 1280px)");
-    const update = () => setWide(query.matches);
-    query.addEventListener("change", update);
-    return () => query.removeEventListener("change", update);
-  }, []);
-  return wide;
-}
-
 function HistoryCard({
   source,
   onSelect,
@@ -92,6 +71,7 @@ function HistoryCard({
           type="button"
           onClick={onSelect}
           aria-label={`${imageTitle(source)}を選択`}
+          aria-haspopup="dialog"
           aria-pressed={selected}
           className={cn(
             "relative block aspect-[3/2] w-full overflow-hidden rounded-xl border bg-muted/50 text-left transition-shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
@@ -178,13 +158,8 @@ export function HistoryView() {
   const [favoriteOnly, setFavoriteOnly] = useState(false);
   const [batch, setBatch] = useState("all");
   const [moreFilters, setMoreFilters] = useState(false);
-  const [mobileOpen, setMobileOpen] = useState(false);
   const [deleteFailedOpen, setDeleteFailedOpen] = useState(false);
   const failedCount = studio.jobs.filter((job) => job.status === "failed").length;
-  const wide = useWideScreen();
-  const selected =
-    studio.jobs.find((job) => job.id === studio.selectedId) ||
-    studio.uploads.find((upload) => upload.id === studio.selectedId);
   const batches = useMemo(() => {
     const map = new Map<string, ImageSource>();
     studio.jobs.forEach((job) => {
@@ -236,16 +211,9 @@ export function HistoryView() {
   };
 
   useEffect(() => {
-    if (studio.view === "history" && studio.selectedId) setMobileOpen(true);
-  }, [studio.selectedId, studio.view]);
-  useEffect(() => {
     if (batch !== "all" && !batches.some((job) => job.batch?.id === batch))
       setBatch("all");
   }, [batches, batch]);
-  function closeInspector() {
-    setMobileOpen(false);
-    studio.select(null);
-  }
 
   return (
     <div className="flex h-full min-h-0">
@@ -374,10 +342,7 @@ export function HistoryView() {
                   </SelectContent>
                 </Select>
                 {hasFilters && (
-                  <Button
-                    variant="ghost"
-                    onClick={clearFilters}
-                  >
+                  <Button variant="ghost" onClick={clearFilters}>
                     <X className="size-4" />
                     絞り込みを解除
                   </Button>
@@ -414,9 +379,7 @@ export function HistoryView() {
               <Button
                 variant="outline"
                 onClick={() =>
-                  hasFilters
-                    ? clearFilters()
-                    : studio.navigate("create")
+                  hasFilters ? clearFilters() : studio.navigate("create")
                 }
               >
                 {hasFilters ? "絞り込みを解除" : "制作画面へ"}
@@ -488,8 +451,7 @@ export function HistoryView() {
                           key={job.id}
                           source={job}
                           onSelect={() => {
-                            studio.select(job.id);
-                            setMobileOpen(true);
+                            studio.openPreview(job);
                           }}
                         />
                       ))}
@@ -501,49 +463,10 @@ export function HistoryView() {
           )}
         </div>
       </div>
-      <FailedJobsDeleteDialog open={deleteFailedOpen} onOpenChange={setDeleteFailedOpen} />
-      {wide && (
-        <aside
-          className="hidden w-[360px] shrink-0 border-l xl:block 2xl:w-[400px]"
-          aria-label="選択した画像の詳細"
-        >
-          {selected ? (
-            <ImageInspector source={selected} onClose={closeInspector} />
-          ) : (
-            <div className="flex h-full flex-col items-center justify-center gap-3 px-8 text-center text-muted-foreground">
-              <ImageIcon className="size-8" />
-              <p className="text-sm leading-relaxed">
-                画像を選ぶと、生成時の入力や
-                <br />
-                参照元を確認できます。
-              </p>
-            </div>
-          )}
-        </aside>
-      )}
-      {!wide && (
-        <Sheet
-          open={mobileOpen && Boolean(selected) && studio.view === "history"}
-          onOpenChange={(open) => {
-            if (!open) closeInspector();
-          }}
-        >
-          <SheetContent
-            side="right"
-            className="w-full gap-0 p-0 sm:max-w-md [&>button]:hidden"
-          >
-            <SheetHeader className="sr-only">
-              <SheetTitle>画像の詳細</SheetTitle>
-              <SheetDescription>
-                選択した画像のプレビュー、操作、生成時の設定
-              </SheetDescription>
-            </SheetHeader>
-            {selected && (
-              <ImageInspector source={selected} onClose={closeInspector} />
-            )}
-          </SheetContent>
-        </Sheet>
-      )}
+      <FailedJobsDeleteDialog
+        open={deleteFailedOpen}
+        onOpenChange={setDeleteFailedOpen}
+      />
     </div>
   );
 }
