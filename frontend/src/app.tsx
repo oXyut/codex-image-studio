@@ -64,6 +64,11 @@ export function App() {
             </Button>
           ))}
         </nav>
+        {["localhost", "127.0.0.1"].includes(window.location.hostname) && (
+          <a href="/lan" target="_blank" rel="noopener noreferrer" className="mx-4 mb-3 text-sm underline md:mt-4">
+            スマホで開く
+          </a>
+        )}
         <div className="mt-auto hidden space-y-4 px-4 py-6 md:block lg:px-5">
           <div className="flex items-center gap-1.5 text-xs">
             <span

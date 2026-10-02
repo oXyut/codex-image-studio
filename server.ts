@@ -6,6 +6,7 @@ import { CodexAdapter } from './src/codex-adapter.js';
 import { createApp } from './src/http-app.js';
 import { JobManager, JobStore } from './src/job-store.js';
 import { LineageStore } from './src/lineage-store.js';
+import { LanAccess, validateLanHost } from './src/lan-access.js';
 import { TemplateStore } from './src/template-store.js';
 import { UploadStore } from './src/upload-store.js';
 
@@ -13,6 +14,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const port = Number(process.env.PORT || 4317);
 const timeoutMs = Number(process.env.GENERATION_TIMEOUT_MS || 600000);
 const concurrency = Number(process.env.GENERATION_CONCURRENCY || 5);
+const lanHost = validateLanHost(process.env.LAN_HOST);
 if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('PORTは1〜65535で指定してください。');
 if (!Number.isInteger(timeoutMs) || timeoutMs < 30000 || timeoutMs > 1800000) throw new Error('GENERATION_TIMEOUT_MSは30000〜1800000で指定してください。');
 if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 10) throw new Error('GENERATION_CONCURRENCYは1〜10の整数で指定してください。');
@@ -42,16 +44,25 @@ await lineage.initialize(store, uploads);
 const manager = new JobManager(store, adapter, { lineage, uploads, concurrency });
 const templates = new TemplateStore(join(dataDirectory, 'templates.json'));
 await templates.initialize();
-const server = createApp({ store, manager, adapter, templates, lineage, uploads, publicDirectory: join(root, 'public') });
-server.on('error', async error => {
-  console.error(record(error).code === 'EADDRINUSE' ? `ポート${port}は使用中です。PORT=4318 npm run dev をお試しください。` : error.message);
-  await unlink(lockPath).catch(() => {}); process.exitCode = 1;
-});
-server.listen(port, '127.0.0.1', () => console.log(`Codex Image Studio: http://127.0.0.1:${port}\n停止: Ctrl+C`));
+const lanAccess = lanHost ? new LanAccess(`http://${lanHost}:${port}`) : undefined;
+const options = { store, manager, adapter, templates, lineage, uploads, publicDirectory: join(root, 'public'), lanAccess };
+const server = createApp(options);
+const lanServer = lanHost ? createApp({ ...options, lanHost }) : undefined;
+const servers = lanServer ? [server, lanServer] : [server];
 let stopping = false;
 async function stop() {
   if (stopping) return; stopping = true;
-  server.close(); await manager.close(); await unlink(lockPath).catch(() => {});
+  for (const active of servers) { active.close(); active.closeIdleConnections(); }
+  await manager.close(); await unlink(lockPath).catch(() => {});
 }
 process.on('SIGINT', stop);
 process.on('SIGTERM', stop);
+try {
+  await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(port, '127.0.0.1', resolve); });
+  if (lanServer && lanHost) await new Promise<void>((resolve, reject) => { lanServer.once('error', reject); lanServer.listen(port, lanHost, resolve); });
+  console.log(`Codex Image Studio: http://127.0.0.1:${port}\n${lanAccess ? `スマホ接続: ${lanAccess.url}（Macの「スマホで開く」で端末を承認）\n` : ''}停止: Ctrl+C`);
+  for (const active of servers) active.on('error', async error => { console.error(error.message); process.exitCode = 1; await stop(); });
+} catch (error) {
+  console.error(record(error).code === 'EADDRINUSE' ? `ポート${port}は使用中です。PORT=4318 npm run dev をお試しください。` : record(error).message);
+  process.exitCode = 1; await stop();
+}
