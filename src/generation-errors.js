@@ -80,7 +80,8 @@ export function generationError(value, fallbackCode = 'GENERATION_FAILED') {
     category = 'timeout'; advice = '処理の状態が不明なため自動で再生成しません。入力を保持しています。必要に応じて再試行してください。';
   } else if (/^(?:contentpolicy|contentreview|moderation|safety|refusal|cyberpolicy|misalignmentpolicyviolation)/.test(type) ||
     /content[_ -]polic(?:y|ies)|moderation[_ -]?(?:blocked|rejected|violation)|safety[_ -](?:policy|violation|blocked)|policy.?violation|\brefusal\b|CONTENT_REVIEW|ガイドライン|ポリシー/i.test(hint) ||
-    /(?:性的(?:な)?内容|sexual content)[^\n]{0,100}(?:拒否|停止|rejected|blocked)|(?:拒否|rejected|blocked)[^\n]{0,100}(?:性的(?:な)?内容|sexual content)/i.test(hint)) {
+    /(?:性的(?:な)?内容|sexual content)[^\n]{0,100}(?:拒否|停止|rejected|blocked)|(?:拒否|rejected|blocked)[^\n]{0,100}(?:性的(?:な)?内容|sexual content)/i.test(hint) ||
+    /(?:安全システム|safety system)[^\n]{0,100}(?:拒否|rejected|blocked)|(?:拒否|rejected|blocked)[^\n]{0,100}(?:安全システム|safety system)/i.test(hint)) {
     category = 'content'; resultCode = 'CONTENT_REVIEW'; message = '画像の内容確認により生成が停止しました。';
     advice = '文章・テンプレート・参照画像は保持しています。意図や内容を確認・編集してから再試行してください。'; retryable = true;
   } else if (['usagelimitexceeded', 'sessionbudgetexceeded', 'imageusagelimit'].includes(type) ||

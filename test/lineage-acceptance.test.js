@@ -9,6 +9,7 @@ import { JobStore, JobManager } from '../src/job-store.js';
 import { LineageStore } from '../src/lineage-store.js';
 import { TemplateStore } from '../src/template-store.js';
 import { createApp } from '../src/http-app.js';
+import { generationError } from '../src/generation-errors.js';
 
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jp1sAAAAASUVORK5CYII=', 'base64');
 const inputs = job => Object.fromEntries(['prompt', 'basePrompt', 'layers', 'references', 'size', 'style', 'transparent'].map(key => [key, job[key]]));
@@ -213,8 +214,49 @@ test('失敗した生成もメタデータを残し、入力編集と再生成�
   const retriedResponse = await app.request(`/api/jobs/${failed.id}/retry`, 'POST'); assert.equal(retriedResponse.status, 202);
   const retried = await retriedResponse.json(); await app.complete(retried.id);
   assert.equal(retried.lineage.operation, 'regenerate'); assert.equal(retried.lineage.sourceJobId, failed.id); assert.equal(retried.prompt, failed.prompt);
-  const graph = await app.snapshot(); assert.equal(graph.commits.length, 3); assert.equal(app.calls.length, 12, '各ジョブで初回と3回の再試行を行い、系譜のノードは増やさない');
-  for (const job of [failed, edit, retried]) assert.equal(app.store.get(job.id).attempts, 4);
+  const graph = await app.snapshot(); assert.equal(graph.commits.length, 3); assert.equal(app.calls.length, 9, '各ジョブで初回と2回の再試行を行い、系譜のノードは増やさない');
+  for (const job of [failed, edit, retried]) assert.equal(app.store.get(job.id).attempts, 3);
+});
+
+test('サイレント再試行の途中も終了後も履歴と系譜は1件のまま、再起動しても増えない', async t => {
+  for (const succeeds of [true, false]) {
+    let entered, release;
+    const retryStarted = new Promise(resolve => { entered = resolve; });
+    const gate = new Promise(resolve => { release = resolve; });
+    let attempts = 0;
+    const app = await setup(t, { generate: async (job, { signal, onProgress }) => {
+      attempts++;
+      if (attempts > 1) onProgress('再試行の内部メッセージ');
+      if (attempts === 2) {
+        signal.addEventListener('abort', release, { once: true });
+        entered(); await gate;
+      }
+      if (attempts < 3 || !succeeds) throw generationError('画像生成ツールの安全システムがリクエストを拒否したため、画像を生成できませんでした。');
+      await writeFile(join(app.store.directory, job.id, 'image.png'), png);
+      return { fileName: 'image.png', mime: 'image/png', bytes: png.length };
+    } });
+    const response = await app.request('/api/jobs', 'POST', { prompt: '保存される入力' });
+    assert.equal(response.status, 202); const job = await response.json();
+    await retryStarted;
+    const running = await (await app.request(`/api/jobs/${job.id}`)).json();
+    assert.equal(running.status, 'running'); assert.equal(running.error, null);
+    assert.doesNotMatch(running.message, /拒否|再試行|リトライ|回目/);
+    const before = await app.snapshot();
+    assert.equal(before.commits.length, 1); assert.equal(before.branches.length, 1);
+    release(); await app.complete(job.id);
+    const result = await (await app.request(`/api/jobs/${job.id}`)).json();
+    assert.equal(result.status, succeeds ? 'succeeded' : 'failed'); assert.equal(result.attempts, 3);
+    if (succeeds) assert.equal(result.error, null);
+    else assert.equal(result.error.message, '3回のリトライ上限に到達しました。');
+    assert.deepEqual(await app.snapshot(), before); assert.deepEqual(result.lineage, running.lineage);
+    const history = await (await app.request('/api/jobs')).json();
+    assert.deepEqual(history.jobs.map(item => item.id), [job.id]);
+    assert.deepEqual(app.calls, Array.from({ length: 3 }, () => inputs(result)));
+    const recovered = new JobStore(app.store.directory); await recovered.initialize();
+    const lineage = new LineageStore(app.lineagePath); await lineage.initialize(recovered);
+    assert.equal(recovered.list().length, 1); assert.equal(recovered.get(job.id).status, result.status);
+    assert.deepEqual(lineage.activeSnapshot(), before);
+  }
 });
 
 test('ジョブ保存後・系譜保存前の停止から再生成と入力編集の出発点を復元する', async t => {

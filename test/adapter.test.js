@@ -6,6 +6,7 @@ import { join, resolve } from 'node:path';
 import { CodexAdapter, cliEnvironment, extractImage } from '../src/codex-adapter.js';
 import { validateInput, imageType, safeMessage, cliErrorMessage } from '../src/validation.js';
 import { prepareGeneration } from '../src/prompt-builder.js';
+import { generationError } from '../src/generation-errors.js';
 
 const binary = resolve('test/fixtures/fake-codex.mjs');
 await chmod(binary, 0o755);
@@ -120,6 +121,7 @@ test('空の画像失敗でも最終説明・公式TurnErrorを保持し、内�
     ['EMPTY_TOOL_CONTENT_COMPLETED', 'content', /content policies/],
     ['EMPTY_TOOL_CONTENT_FAILED', 'content', /content policies/],
     ['EMPTY_TOOL_JAPANESE_CONTENT', 'content', /性的内容としてリクエストを拒否/],
+    ['EMPTY_TOOL_JAPANESE_SAFETY', 'content', /安全システムがリクエストを拒否/],
     ['EMPTY_TOOL_USAGE_TURN', 'usage', /usageLimitExceeded/],
     ['EMPTY_TOOL_503_TURN', 'transient', /503/],
     ['EMPTY_TOOL_AGENT_TRANSIENT', 'transient', /temporarily unavailable/],
@@ -138,5 +140,7 @@ test('空の画像失敗でも最終説明・公式TurnErrorを保持し、内�
       return true;
     });
     assert.ok(!progress.includes('画像を受信しています。'));
+    assert.ok(!progress.includes('画像生成のエラーを確認しています。'));
+    if (category === 'content') assert.ok(progress.every(text => generationError(text).category !== 'content'));
   }
 });

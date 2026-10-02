@@ -123,7 +123,7 @@ describe("制作画面の生成結果", () => {
     expect(screen.getByText("削除 1枚")).toBeInTheDocument();
   });
 
-  it("内容審査の失敗は対処案と詳細を確認でき、編集操作で元入力を読み込む", async () => {
+  it("再試行上限と対処案・詳細を表示し、編集操作で元入力を読み込む", async () => {
     const failed: ImageSource = {
       ...completed,
       id: "failed",
@@ -133,7 +133,7 @@ describe("制作画面の生成結果", () => {
       error: {
         category: "content",
         code: "CONTENT_REVIEW",
-        message: "生成内容を確認してください。",
+        message: "3回のリトライ上限に到達しました。",
         advice: "表現を見直してから再試行してください。",
         details: "保存された内容審査の診断情報",
       },
@@ -141,6 +141,7 @@ describe("制作画面の生成結果", () => {
     const studio = context({ jobs: [failed], selectedId: failed.id });
     const user = userEvent.setup();
     renderView(studio);
+    expect(screen.getByText("3回のリトライ上限に到達しました。")).toBeVisible();
     expect(
       screen.getByText("表現を見直してから再試行してください。"),
     ).toBeVisible();
