@@ -40,6 +40,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import { ImageInspector } from "@/components/image-inspector";
 import { dateLabel, statusLabels } from "@/lib/format";
 import { useStudio } from "@/lib/studio-context";
@@ -233,6 +240,19 @@ function BatchNode({ data }: NodeProps<FlowBatchNode>) {
 const nodeTypes = { image: ImageNode, batch: BatchNode };
 const allValue = "__all__";
 
+function useWideScreen() {
+  const [wide, setWide] = useState(
+    () => window.matchMedia("(min-width: 1024px)").matches,
+  );
+  useEffect(() => {
+    const query = window.matchMedia("(min-width: 1024px)");
+    const update = () => setWide(query.matches);
+    query.addEventListener("change", update);
+    return () => query.removeEventListener("change", update);
+  }, []);
+  return wide;
+}
+
 function FilterSelect({
   label,
   value,
@@ -269,6 +289,7 @@ function FilterSelect({
 
 export function LineageView() {
   const studio = useStudio();
+  const wide = useWideScreen();
   const [query, setQuery] = useState("");
   const [branchId, setBranchId] = useState("");
   const [componentId, setComponentId] = useState("");
@@ -472,7 +493,7 @@ export function LineageView() {
   }
 
   return (
-    <section className="flex min-h-full flex-col xl:h-full xl:min-h-0" aria-label="画像の系統図">
+    <section className="flex min-h-full flex-col lg:h-full lg:min-h-0" aria-label="画像の系統図">
       <div className="shrink-0 border-b bg-white px-5 py-5 lg:px-7">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
@@ -510,8 +531,8 @@ export function LineageView() {
           </Button>
         </div>
       </div>
-      <div className="flex shrink-0 flex-col xl:min-h-0 xl:flex-1 xl:flex-row">
-        <div className="flex min-w-0 shrink-0 flex-col xl:min-h-0 xl:flex-1">
+      <div className="flex shrink-0 flex-col lg:min-h-0 lg:flex-1 lg:flex-row">
+        <div className="flex min-w-0 shrink-0 flex-col lg:min-h-0 lg:flex-1">
           <div className="shrink-0 space-y-4 border-b bg-white px-5 py-4 lg:px-7">
             <div className="flex flex-wrap items-center gap-3">
               <div className="relative min-w-48 flex-1">
@@ -638,7 +659,7 @@ export function LineageView() {
             </div>
           </div>
           <div
-            className="relative h-[60dvh] min-h-[440px] shrink-0 overflow-hidden bg-zinc-50 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-zinc-400 xl:h-auto xl:min-h-0 xl:flex-1"
+            className="relative h-[60dvh] min-h-[440px] shrink-0 overflow-hidden bg-zinc-50 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-zinc-400 lg:h-auto lg:min-h-0 lg:flex-1"
             role="region"
             aria-label="画像のつながり。背景をドラッグ、上下左右キーで移動できます"
             tabIndex={0}
@@ -784,25 +805,56 @@ export function LineageView() {
             </div>
           )}
         </div>
-        <aside
-          className={cn(
-            "shrink-0 overflow-hidden border-t bg-white xl:w-[336px] xl:border-l xl:border-t-0",
-            selectedSource && "h-[70dvh] xl:h-auto",
-          )}
-          aria-label="選択した画像の詳細"
-        >
-          {selectedSource ? (
-            <ImageInspector source={selectedSource} mode="lineage" />
-          ) : (
-            <div className="p-5">
-              <h2 className="font-semibold">選択した画像</h2>
-              <p className="mt-3 text-sm leading-relaxed text-zinc-500">
-                画像を選択すると、生成時の入力や参照のつながりを確認できます。
-              </p>
-            </div>
-          )}
-        </aside>
+        {wide && (
+          <aside
+            className="min-h-0 w-[336px] shrink-0 overflow-hidden border-l bg-white"
+            aria-label="選択した画像の詳細"
+          >
+            {selectedSource ? (
+              <ImageInspector
+                source={selectedSource}
+                mode="lineage"
+                onClose={() => studio.select(null)}
+              />
+            ) : (
+              <div className="p-5">
+                <h2 className="font-semibold">選択した画像</h2>
+                <p className="mt-3 text-sm leading-relaxed text-zinc-500">
+                  画像を選択すると、生成時の入力や参照のつながりを確認できます。
+                </p>
+              </div>
+            )}
+          </aside>
+        )}
       </div>
+      {!wide && (
+        <Sheet
+          open={Boolean(selectedSource) && studio.view === "lineage"}
+          onOpenChange={(open) => {
+            if (!open) studio.select(null);
+          }}
+        >
+          <SheetContent
+            side="right"
+            className="w-full gap-0 p-0 sm:max-w-md"
+            showCloseButton={false}
+          >
+            <SheetHeader className="sr-only">
+              <SheetTitle>選択した画像の詳細</SheetTitle>
+              <SheetDescription>
+                選択した画像のプレビュー、操作、生成時の設定と参照のつながり
+              </SheetDescription>
+            </SheetHeader>
+            {selectedSource && (
+              <ImageInspector
+                source={selectedSource}
+                mode="lineage"
+                onClose={() => studio.select(null)}
+              />
+            )}
+          </SheetContent>
+        </Sheet>
+      )}
     </section>
   );
 }
