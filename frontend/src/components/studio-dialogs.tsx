@@ -146,6 +146,8 @@ export function StudioDialogs({
     ? visible.find((s) => s.id === preview.id) || preview
     : null;
   const index = visible.findIndex((s) => s.id === current?.id);
+  const previousImage = index > 0 ? visible[index - 1] : null;
+  const nextImage = index >= 0 ? visible[index + 1] : null;
   return (
     <>
       <Dialog
@@ -154,7 +156,30 @@ export function StudioDialogs({
           if (!open) onPreview(null);
         }}
       >
-        <DialogContent className="flex max-h-[92dvh] w-[calc(100%-2rem)] flex-col sm:max-w-5xl">
+        <DialogContent
+          className="flex max-h-[92dvh] w-[calc(100%-2rem)] flex-col sm:max-w-5xl"
+          onKeyDown={(event) => {
+            if (
+              !["ArrowLeft", "ArrowRight"].includes(event.key) ||
+              event.defaultPrevented ||
+              event.altKey ||
+              event.ctrlKey ||
+              event.metaKey ||
+              event.shiftKey ||
+              !(event.target instanceof HTMLElement) ||
+              !event.currentTarget.contains(event.target) ||
+              event.target.closest(
+                'input, textarea, select, [contenteditable]:not([contenteditable="false"])',
+              )
+            )
+              return;
+            event.preventDefault();
+            event.stopPropagation();
+            const adjacent =
+              event.key === "ArrowLeft" ? previousImage : nextImage;
+            if (adjacent) onPreview(adjacent);
+          }}
+        >
           <DialogHeader>
             <DialogTitle className="truncate pr-7">
               {current && imageTitle(current)}
@@ -171,24 +196,24 @@ export function StudioDialogs({
                   alt={imageTitle(current)}
                   className="max-h-[62dvh] max-w-full object-contain"
                 />
-                {index > 0 && (
+                {previousImage && (
                   <Button
                     variant="secondary"
                     size="icon"
                     className="absolute left-3"
                     aria-label="前の画像"
-                    onClick={() => onPreview(visible[index - 1])}
+                    onClick={() => onPreview(previousImage)}
                   >
                     <ChevronLeft />
                   </Button>
                 )}
-                {index >= 0 && index < visible.length - 1 && (
+                {nextImage && (
                   <Button
                     variant="secondary"
                     size="icon"
                     className="absolute right-3"
                     aria-label="次の画像"
-                    onClick={() => onPreview(visible[index + 1])}
+                    onClick={() => onPreview(nextImage)}
                   >
                     <ChevronRight />
                   </Button>
