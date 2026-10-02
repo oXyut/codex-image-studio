@@ -29,7 +29,7 @@ export function App() {
   }>();
   return (
     <div className="flex min-h-dvh flex-col md:h-dvh md:min-h-0 md:flex-row">
-      <aside className="flex shrink-0 flex-col border-b bg-[#fafafa] md:w-[208px] md:border-b-0 md:border-r lg:w-[224px]">
+      <aside className="flex shrink-0 flex-col border-b bg-[#fafafa] md:w-[184px] md:border-b-0 md:border-r lg:w-[208px]">
         <div className="flex items-center gap-3 p-4 md:flex-col md:items-start md:px-5 md:py-6">
           <img
             src="/favicon.svg"
@@ -52,7 +52,7 @@ export function App() {
               key={id}
               variant="ghost"
               className={cn(
-                "h-16 min-w-0 flex-1 flex-col justify-center gap-1 whitespace-normal px-2 py-1 text-xs leading-tight font-normal md:h-11 md:flex-none md:flex-row md:justify-start md:gap-2 md:whitespace-nowrap md:px-3 md:text-base md:w-full",
+                "h-16 min-w-0 flex-1 flex-col justify-center gap-1 whitespace-normal px-2 py-1 text-xs leading-tight font-normal md:h-10 md:flex-none md:flex-row md:justify-start md:gap-2 md:whitespace-nowrap md:px-3 md:text-base md:w-full",
                 studio.view === id &&
                   "bg-zinc-200/70 font-medium hover:bg-zinc-200",
               )}
@@ -64,15 +64,15 @@ export function App() {
             </Button>
           ))}
         </nav>
-        <div className="mt-auto hidden space-y-4 px-5 py-6 md:block">
-          <div className="flex items-center gap-2 text-xs">
+        <div className="mt-auto hidden space-y-4 px-4 py-6 md:block lg:px-5">
+          <div className="flex items-center gap-1.5 text-xs">
             <span
               className={cn(
                 "size-2 rounded-full",
                 studio.health?.ready ? "bg-emerald-600" : "bg-amber-500",
               )}
             />
-            <span>
+            <span className="whitespace-nowrap">
               ChatGPT {studio.health?.ready ? "接続済み" : "接続確認"}
             </span>
             <Button

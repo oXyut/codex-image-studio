@@ -136,7 +136,7 @@ export function CreateView({
       <div className="flex min-h-0 flex-1 flex-col md:flex-row">
         <section
           aria-label="制作の入力"
-          className="flex w-full shrink-0 flex-col border-b bg-white md:w-[360px] md:border-b-0 md:border-r lg:w-[416px]"
+          className="flex w-full shrink-0 flex-col border-b bg-white md:w-[320px] md:border-b-0 md:border-r lg:w-[360px]"
         >
           <div className="flex-1 space-y-6 overflow-y-auto p-5 lg:p-7">
             <div>
@@ -162,7 +162,7 @@ export function CreateView({
                 value={d.prompt}
                 maxLength={4000}
                 onChange={(e) => studio.updateDraft({ prompt: e.target.value })}
-                className="min-h-40 resize-y text-base md:text-base"
+                className="min-h-40 resize-y text-[16px] md:text-base"
               />
               <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
                 <span>
@@ -566,7 +566,7 @@ export function CreateView({
         </section>
         <section
           aria-label="生成結果"
-          className="flex min-h-[540px] min-w-0 flex-1 flex-col bg-[#fafafa] md:min-h-0"
+          className="studio-result flex min-h-[540px] min-w-0 flex-1 flex-col bg-[#fafafa] md:min-h-0"
         >
           <header className="flex min-h-16 items-center justify-between gap-3 border-b bg-white px-5 lg:px-7">
             <div>
@@ -707,7 +707,7 @@ export function CreateView({
                     </div>
                   )}
                 </div>
-                <div className="mt-4 flex w-full max-w-4xl flex-wrap items-center justify-between gap-3">
+                <div className="result-meta mt-4 flex w-full max-w-4xl flex-wrap items-center justify-between gap-3">
                   <p className="min-w-0 flex-1 truncate text-sm text-muted-foreground">
                     {canvasSizeLabel(source.size, { full: true })} ·{" "}
                     {styleLabels[source.style || "auto"]} ·{" "}

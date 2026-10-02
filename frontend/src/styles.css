@@ -1,6 +1,11 @@
 @import "tailwindcss";
 @custom-variant dark (&:where(.dark, .dark *));
 @theme inline {
+  --text-sm: 0.8125rem;
+  --text-base: 0.875rem;
+  --text-lg: 1rem;
+  --text-xl: 1.125rem;
+  --text-2xl: 1.25rem;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -55,7 +60,7 @@
       "Segoe UI",
       "Noto Sans JP",
       sans-serif;
-    font-size: 14px;
+    font-size: 13px;
     line-height: 1.6;
   }
   button,
@@ -102,6 +107,22 @@
 .studio-view {
   height: 100%;
   min-height: 0;
+}
+.studio-result {
+  container: generation-result / inline-size;
+}
+@container generation-result (max-width: 400px) {
+  .result-meta {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .result-meta > p {
+    flex: none;
+    white-space: normal;
+  }
+  .result-meta > div {
+    align-self: flex-end;
+  }
 }
 @media (max-width: 767px) {
   .studio-view {
