@@ -1,0 +1,17 @@
+# Generated images, history, templates, and runtime state
+data/
+node_modules/
+
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+.codex/
+auth.json
+credentials*.json
+*.pem
+*.key
+
+# Local artifacts
+.DS_Store
+*.log

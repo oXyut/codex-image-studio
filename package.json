@@ -1,0 +1,15 @@
+{
+  "name": "codex-image-studio",
+  "version": "1.7.1",
+  "private": true,
+  "type": "module",
+  "description": "ChatGPT認証のCodex CLIで動くローカル画像生成スタジオ",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "dev": "node --env-file-if-exists=.env server.js",
+    "start": "node --env-file-if-exists=.env server.js",
+    "test": "node --test test/*.test.js",
+    "check": "node scripts/check.js",
+    "doctor": "node --env-file-if-exists=.env scripts/doctor.js"
+  }
+}
