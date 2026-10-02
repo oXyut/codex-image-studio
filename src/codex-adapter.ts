@@ -116,13 +116,14 @@ export class CodexAdapter {
           imageFailureReported ||= Boolean(item.failure || item.result);
           const failure = generationError(item.failure || item.result || '画像生成ツールでエラーが発生しました。', 'IMAGE_GENERATION_FAILED');
           failures.image = retainFailure(failures.image, failure);
-          onProgress('画像生成のエラーを確認しています。');
         }
       }
       if (item?.type === 'agentMessage' && item.text) {
         const text = safeMessage(item.text);
+        // Keep final explanations for diagnosis without exposing a refusal
+        // while the manager is still allowed to retry this request.
         if (item.phase !== 'commentary') lastAgentMessage = text;
-        onProgress(text);
+        else if (!failures.image && generationError(text).category !== 'content') onProgress(text);
       }
     };
     const completed = deferred();

@@ -50,6 +50,10 @@ createInterface({ input: process.stdin }).on('line', async line => {
       let error: unknown = null;
       if (prompt.includes('CONTENT_')) text = 'The image request could not be completed because it violates our content policies.';
       if (prompt.includes('JAPANESE_CONTENT')) text = '画像生成ツールが性的内容としてリクエストを拒否したため、画像を生成できませんでした。';
+      if (prompt.includes('JAPANESE_SAFETY')) {
+        text = '画像生成ツールの安全システムがリクエストを拒否したため、画像を生成できませんでした。依頼の書き換えや再試行は行っていません。';
+        send({ method: 'item/completed', params: { item: { id: 'commentary', type: 'agentMessage', phase: 'commentary', text } } });
+      }
       if (prompt.includes('AGENT_TRANSIENT')) text = 'Image service temporarily unavailable; try again later.';
       if (prompt.includes('USAGE_TURN')) error = { message: 'Generation failed', codexErrorInfo: 'usageLimitExceeded', additionalDetails: 'Image quota exhausted' };
       if (prompt.includes('503_TURN')) error = { message: 'Generation failed', codexErrorInfo: { httpConnectionFailed: { httpStatusCode: 503 } }, additionalDetails: 'Backend unavailable' };

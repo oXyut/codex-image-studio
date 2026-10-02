@@ -5,8 +5,15 @@ import type {
   Reference,
   Template,
   TemplateLayer,
-} from '@shared/types.js';
-export type { ImageSource,LineageMetadata,Reference,Template,TemplateLayer,TemplateVersion } from '@shared/types.js';
+} from "@shared/types.js";
+export type {
+  ImageSource,
+  LineageMetadata,
+  Reference,
+  Template,
+  TemplateLayer,
+  TemplateVersion,
+} from "@shared/types.js";
 export type View = "create" | "history" | "lineage" | "templates";
 export type Draft = {
   prompt: string;

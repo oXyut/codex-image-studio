@@ -143,7 +143,7 @@ export function createApp({ store, manager, adapter, templates, lineage, uploads
           if (!health.ready) throw new AppError(health.message, 'CODEX_NOT_READY', 503);
           const input = prepareGeneration({ ...job, prompt: job.basePrompt ?? job.prompt }, templates, store, uploads, lineage);
           if (action === 'retry-batch') {
-            const batch = await manager.enqueueBatch(input, count!,  { regenerateFrom: job.id });
+            const batch = await manager.enqueueBatch(input, count!, { regenerateFrom: job.id });
             return json(response, 202, { batchId: batch.batchId, jobs: batch.jobs.map(item => publicJob(item, lineage)) });
           }
           return json(response, 202, publicJob(await manager.enqueue(input, { regenerateFrom: job.id }), lineage));
@@ -178,7 +178,7 @@ export function createApp({ store, manager, adapter, templates, lineage, uploads
     } catch (error) {
       const known = error instanceof AppError;
       if (!known) console.error('リクエスト処理に失敗:', record(error).code || record(error).name);
-      if (!response.headersSent) json(response, known ? error.status : 500, { error: { code: known ? record(error).code : 'INTERNAL_ERROR', message: known ? error.message : '処理に失敗しました。もう一度お試しください。' } });
+      if (!response.headersSent) json(response, known ? error.status : 500, { error: { code: known ? error.code : 'INTERNAL_ERROR', message: known ? error.message : '処理に失敗しました。もう一度お試しください。' } });
       else response.end();
     }
   });

@@ -302,13 +302,23 @@ describe("画像詳細", () => {
     expect(screen.getByRole("alert")).toHaveTextContent(
       "内容を確認してください",
     );
+    expect(
+      screen.getAllByRole("button", { name: "画像のその他の操作" }),
+    ).toHaveLength(1);
     await user.click(screen.getByText("エラーの詳細"));
-    expect(screen.getByText("保存された診断情報")).toBeVisible();
+    expect(screen.getByText(/CONTENT_REVIEW\s+保存された診断情報/)).toBeVisible();
     await user.click(
       screen.getByRole("button", { name: "内容を編集して再試行" }),
     );
     expect(studio.replaceFromSource).toHaveBeenCalledWith(failed);
     expect(studio.retry).not.toHaveBeenCalled();
+    await user.click(
+      screen.getByRole("button", { name: "画像のその他の操作" }),
+    );
+    await user.click(
+      screen.getByRole("menuitem", { name: "画像と下流をゴミ箱へ" }),
+    );
+    expect(studio.requestDelete).toHaveBeenCalledExactlyOnceWith(failed);
   });
 
   it("タイトルとメモは画像の管理欄から同じ画像に保存する", async () => {
