@@ -8,6 +8,7 @@ import {
   LoaderCircle,
   Search,
   SlidersHorizontal,
+  Star,
   Trash2,
   X,
 } from "lucide-react";
@@ -31,6 +32,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { ImageInspector } from "@/components/image-inspector";
+import { ImageFavoriteButton } from "@/components/image-actions";
 import { useStudio } from "@/lib/studio-context";
 import {
   dateLabel,
@@ -138,6 +140,10 @@ function HistoryCard({
             </Badge>
           )}
         </button>
+        <ImageFavoriteButton
+          source={source}
+          className="absolute left-3 top-3 shadow-sm"
+        />
         {isComplete(source) && (
           <Button
             variant="secondary"
@@ -168,6 +174,7 @@ export function HistoryView() {
   const studio = useStudio();
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<HistoryFilter>("all");
+  const [favoriteOnly, setFavoriteOnly] = useState(false);
   const [batch, setBatch] = useState("all");
   const [moreFilters, setMoreFilters] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -191,6 +198,7 @@ export function HistoryView() {
       .split(/\s+/)
       .filter(Boolean);
     return studio.jobs.filter((job) => {
+      if (favoriteOnly && (!job.favorite || !isComplete(job))) return false;
       if (batch !== "all" && job.batch?.id !== batch) return false;
       if (filter === "complete" && !isComplete(job)) return false;
       if (filter === "active" && !["running", "queued"].includes(job.status))
@@ -209,12 +217,20 @@ export function HistoryView() {
         .toLocaleLowerCase("ja-JP");
       return terms.every((term) => text.includes(term));
     });
-  }, [studio.jobs, query, batch, filter]);
+  }, [studio.jobs, query, batch, filter, favoriteOnly]);
   const groups = useMemo(
     () => groupGenerationHistory(filtered, studio.jobs) as HistoryGroup[],
     [filtered, studio.jobs],
   );
-  const hasFilters = Boolean(query || filter !== "all" || batch !== "all");
+  const hasFilters = Boolean(
+    query || filter !== "all" || batch !== "all" || favoriteOnly,
+  );
+  const clearFilters = () => {
+    setQuery("");
+    setFilter("all");
+    setBatch("all");
+    setFavoriteOnly(false);
+  };
 
   useEffect(() => {
     if (studio.view === "history" && studio.selectedId) setMobileOpen(true);
@@ -276,6 +292,20 @@ export function HistoryView() {
                 ))}
               </div>
               <Button
+                variant={favoriteOnly ? "secondary" : "outline"}
+                className="h-11"
+                aria-pressed={favoriteOnly}
+                onClick={() => setFavoriteOnly((value) => !value)}
+              >
+                <Star
+                  className={cn(
+                    "size-4",
+                    favoriteOnly && "fill-amber-400 text-amber-600",
+                  )}
+                />
+                お気に入りのみ
+              </Button>
+              <Button
                 variant="outline"
                 className="h-11"
                 aria-expanded={moreFilters}
@@ -333,11 +363,7 @@ export function HistoryView() {
                 {hasFilters && (
                   <Button
                     variant="ghost"
-                    onClick={() => {
-                      setQuery("");
-                      setFilter("all");
-                      setBatch("all");
-                    }}
+                    onClick={clearFilters}
                   >
                     <X className="size-4" />
                     絞り込みを解除
@@ -376,7 +402,7 @@ export function HistoryView() {
                 variant="outline"
                 onClick={() =>
                   hasFilters
-                    ? (setQuery(""), setFilter("all"), setBatch("all"))
+                    ? clearFilters()
                     : studio.navigate("create")
                 }
               >

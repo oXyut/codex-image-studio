@@ -28,7 +28,11 @@ import {
   AccordionTrigger,
 } from "@/components/ui/accordion";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { ImageActionMenu, ImageDownload } from "@/components/image-actions";
+import {
+  ImageActionMenu,
+  ImageDownload,
+  ImageFavoriteButton,
+} from "@/components/image-actions";
 import { useStudio } from "@/lib/studio-context";
 import {
   dateLabel,
@@ -413,6 +417,7 @@ export function ImageInspector({
             <ArrowRight className="size-4" />
           </Button>
           <div className="flex gap-2">
+            <ImageFavoriteButton source={source} />
             <ImageDownload source={source} />
             <ImageActionMenu
               source={source}
