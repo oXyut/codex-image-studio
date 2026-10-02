@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { StudioContext } from "@/lib/studio-context";
 import type { ImageSource, StudioContextValue } from "@/lib/types";
-import { ImageActions } from "./image-actions";
+import { ImageActions, ImageFavoriteButton } from "./image-actions";
 import { ImageInspector } from "./image-inspector";
 
 afterEach(cleanup);
@@ -58,6 +58,8 @@ function context(
     submitting: false,
     retry: vi.fn().mockResolvedValue(undefined),
     cancel: vi.fn().mockResolvedValue(undefined),
+    setFavorite: vi.fn().mockResolvedValue(undefined),
+    favoritePendingIds: [],
     openPreview: vi.fn(),
     requestDelete: vi.fn(),
     openTrash: vi.fn(),
@@ -69,6 +71,50 @@ function context(
 }
 
 describe("共有画像操作", () => {
+  it("お気に入りを追加・解除し、保存中は同じ画像の操作を無効にする", async () => {
+    const studio = context({ health: { ready: false, message: "未接続" } });
+    const user = userEvent.setup();
+    const { rerender } = render(
+      <StudioContext.Provider value={studio}>
+        <ImageActions source={image} />
+      </StudioContext.Provider>,
+    );
+    const add = screen.getByRole("button", { name: "朝霧の森の家をお気に入りに追加" });
+    expect(add).toHaveAttribute("aria-pressed", "false");
+    await user.click(add);
+    expect(studio.setFavorite).toHaveBeenCalledWith(image, true);
+    expect(studio.addReference).not.toHaveBeenCalled();
+    expect(studio.replaceFromSource).not.toHaveBeenCalled();
+    const favorite = { ...image, favorite: true };
+    rerender(
+      <StudioContext.Provider value={studio}>
+        <ImageActions source={favorite} />
+      </StudioContext.Provider>,
+    );
+    const remove = screen.getByRole("button", { name: "朝霧の森の家をお気に入りから外す" });
+    expect(remove).toHaveAttribute("aria-pressed", "true");
+    await user.click(remove);
+    expect(studio.setFavorite).toHaveBeenLastCalledWith(favorite, false);
+    rerender(
+      <StudioContext.Provider value={{ ...studio, favoritePendingIds: [image.id] }}>
+        <ImageActions source={favorite} />
+      </StudioContext.Provider>,
+    );
+    expect(remove).toBeDisabled();
+  });
+
+  it.each(["queued", "running", "failed", "cancelled", "uploaded"])(
+    "%sの画像にはお気に入り操作を表示しない",
+    (status) => {
+      render(
+        <StudioContext.Provider value={context()}>
+          <ImageFavoriteButton source={{ ...image, status, ...(status === "uploaded" ? { kind: "upload" as const } : {}) }} />
+        </StudioContext.Provider>,
+      );
+      expect(screen.queryByRole("button", { name: /お気に入り/ })).not.toBeInTheDocument();
+    },
+  );
+
   it("参照追加、画像を起点とする編集、元入力の復元を別々の操作として扱う", async () => {
     const studio = context();
     const user = userEvent.setup();
