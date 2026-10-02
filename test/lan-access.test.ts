@@ -52,6 +52,7 @@ test('未承認端末にはコード入力だけを表示し、全APIと画像�
   const { localBase, lan } = await setup(t);
   assert.equal((await fetch(localBase)).status, 200);
   const login = await lan('/'); assert.equal(login.status, 200); assert.match(login.body, /このスマホを承認/); assert.doesNotMatch(login.body, /\/assets\//);
+  assert.equal(login.headers['referrer-policy'], 'same-origin');
   for (const path of ['/api/session', '/api/jobs', '/api/lineage', '/api/templates', '/api/uploads', '/api/trash', '/api/health', '/api/jobs/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/image', '/api/uploads/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/image', '/assets/index.js', '/favicon.svg', '/lan', '/lan/code']) {
     const response = await lan(path); assert.equal(response.status, 401, path); assert.match(response.body, /DEVICE_AUTH_REQUIRED/);
   }
@@ -74,6 +75,30 @@ test('コードは単回使用で、承認後の画像・履歴とCSRF保護を�
   assert.equal((await lan(`/api/jobs/${job.id}/favorite`, { method: 'PATCH', headers: { ...headers, 'X-Studio-Token': token, 'Content-Type': 'application/json' }, body: '{"favorite":true}' })).status, 200);
   assert.equal(store.get(job.id).favorite, true);
 });
+test('承認用フォームはOriginを保持し、nullや別Originのコード発行を拒否する', async t => {
+  const { localBase } = await setup(t);
+  const ownerPage = await fetch(`${localBase}/lan`);
+  assert.equal(ownerPage.headers.get('referrer-policy'), 'same-origin');
+  const page = await ownerPage.text();
+  const token = page.match(/name="token" value="([^"]+)"/)![1];
+  for (const origin of ['null', localBase.replace('127.0.0.1', 'localhost'), 'https://evil.example']) {
+    const rejected = await fetch(`${localBase}/lan/code`, {
+      method: 'POST',
+      headers: { Origin: origin, 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ token }),
+    });
+    assert.equal(rejected.status, 403);
+    assert.match(await rejected.text(), /INVALID_ORIGIN/);
+  }
+  const response = await fetch(`${localBase}/lan/code`, {
+    method: 'POST',
+    headers: { Origin: localBase, 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ token }),
+  });
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('referrer-policy'), 'same-origin');
+  assert.match(await response.text(), /id="pairing-code">\d{8}/);
+});
 test('コード再発行・期限切れ・端末期限切れ・承認解除はアクセスを失効する', async t => {
   const { code, pair, cookie, lan, owner, advance } = await setup(t);
   const previous = await code(); await code(); assert.equal((await pair(previous)).status, 403);
@@ -86,6 +111,7 @@ test('ホスト偽装・別サイト・LANからのコード発行を拒否す�
   const { lan, localBase, cookie } = await setup(t);
   assert.equal((await lan('/', { headers: { Host: 'localhost:4317' } })).status, 403);
   assert.equal((await lan('/lan/pair', { method: 'POST', headers: { Origin: 'https://evil.example', 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'code=00000000' })).status, 403);
+  assert.equal((await lan('/lan/pair', { method: 'POST', headers: { Origin: 'null', 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'code=00000000' })).status, 403);
   const session = await cookie();
   assert.equal((await lan('/api/jobs', { headers: { Cookie: session, 'Sec-Fetch-Site': 'cross-site' } })).status, 403);
   assert.equal((await lan('/lan/code', { method: 'POST', headers: { Cookie: session }, body: 'token=fake' })).status, 403);
