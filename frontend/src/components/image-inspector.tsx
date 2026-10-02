@@ -27,7 +27,7 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { GenerationRecovery } from "@/components/generation-recovery";
 import {
   ImageActionMenu,
   ImageContextMenu,
@@ -37,7 +37,6 @@ import {
 import { useStudio } from "@/lib/studio-context";
 import {
   dateLabel,
-  errorMessage,
   imageTitle,
   isComplete,
   statusLabels,
@@ -131,11 +130,6 @@ export function ImageInspector({
   const complete = isComplete(source);
   const active = ["queued", "running"].includes(source.status);
   const uploaded = source.kind === "upload";
-  const error = typeof source.error === "object" ? source.error : null;
-  const details =
-    source.errorDetails ||
-    (typeof error?.details === "string" ? error.details : "") ||
-    "この履歴には詳しい理由が保存されていません。生成時の入力は保持されています。";
   const resolveSources = (ids: string[]) =>
     ids
       .map((value) => graph.nodeMap.get(value)?.job)
@@ -297,27 +291,7 @@ export function ImageInspector({
           )}
         </div>
         {source.status === "failed" && (
-          <Alert variant="destructive">
-            <AlertTitle>生成に失敗しました</AlertTitle>
-            <AlertDescription className="space-y-2">
-              <p className="whitespace-pre-wrap break-words">
-                {errorMessage(source)}
-              </p>
-              {typeof error?.advice === "string" && <p>{error.advice}</p>}
-              <Button
-                variant="outline"
-                className="w-full"
-                onClick={() => studio.replaceFromSource(source)}
-              >
-                <Pencil className="size-4" />
-                内容を編集して再試行
-              </Button>
-              <details className="text-sm">
-                <summary className="cursor-pointer py-2">エラーの詳細</summary>
-                <p className="whitespace-pre-wrap break-words">{details}</p>
-              </details>
-            </AlertDescription>
-          </Alert>
+          <GenerationRecovery key={source.id} source={source} />
         )}
         {active && (
           <div className="space-y-3 rounded-lg border bg-muted/30 p-3">
@@ -426,11 +400,13 @@ export function ImageInspector({
           <div className="flex gap-2">
             <ImageFavoriteButton source={source} />
             <ImageDownload source={source} />
-            <ImageActionMenu
-              source={source}
-              includeDerive={mode === "history" && complete}
-              includeRestore={mode === "lineage" && source.status !== "failed"}
-            />
+            {source.status !== "failed" && (
+              <ImageActionMenu
+                source={source}
+                includeDerive={mode === "history" && complete}
+                includeRestore={mode === "lineage"}
+              />
+            )}
           </div>
         </div>
         <dl className="grid grid-cols-[auto_1fr] gap-x-5 gap-y-3 border-t pt-5 text-sm">

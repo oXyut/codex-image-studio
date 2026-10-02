@@ -81,6 +81,9 @@ describe("制作画面の生成結果", () => {
     expect(
       screen.getByRole("button", { name: "元の入力に置き換えて編集" }),
     ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "内容を編集して再試行" }),
+    ).not.toBeInTheDocument();
   });
 
   it("完成画像を選択中でも、同時作成の残り1枚を停止できる", async () => {
@@ -145,6 +148,18 @@ describe("制作画面の生成結果", () => {
     expect(
       screen.getByText("表現を見直してから再試行してください。"),
     ).toBeVisible();
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "3回のリトライ上限に到達しました。",
+    );
+    expect(
+      screen.queryByRole("button", { name: "元の入力に置き換えて編集" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getAllByRole("button", { name: "画像のその他の操作" }),
+    ).toHaveLength(1);
+    expect(screen.getByRole("textbox", { name: "プロンプト" })).toHaveValue(
+      "制作中の文章",
+    );
     await user.click(screen.getByText("エラーの詳細"));
     expect(screen.getByText(/保存された内容審査の診断情報/)).toBeVisible();
     expect(screen.getByText(/CONTENT_REVIEW/)).toBeVisible();
@@ -153,4 +168,42 @@ describe("制作画面の生成結果", () => {
     );
     expect(studio.replaceFromSource).toHaveBeenCalledExactlyOnceWith(failed);
   });
+
+  it.each([null, "以前に保存されたエラー文"])(
+    "古いエラー形式（%s）でも編集でき、診断がない場合はその旨を示す",
+    async (error) => {
+      const failed: ImageSource = {
+        ...completed,
+        id: "legacy-failed",
+        status: "failed",
+        image: undefined,
+        batch: undefined,
+        error,
+      };
+      const studio = context({
+        jobs: [failed],
+        selectedId: failed.id,
+        health: { ready: false, message: "接続を確認してください。" },
+        generate: vi.fn(),
+        retry: vi.fn(),
+      });
+      const user = userEvent.setup();
+      renderView(studio);
+      expect(screen.getByRole("alert")).toHaveTextContent(
+        error || "生成に失敗しました。",
+      );
+      await user.click(screen.getByText("エラーの詳細"));
+      expect(
+        screen.getByText(
+          "この履歴には詳しい理由が保存されていません。生成時の入力は保持されています。",
+        ),
+      ).toBeVisible();
+      await user.click(
+        screen.getByRole("button", { name: "内容を編集して再試行" }),
+      );
+      expect(studio.replaceFromSource).toHaveBeenCalledExactlyOnceWith(failed);
+      expect(studio.generate).not.toHaveBeenCalled();
+      expect(studio.retry).not.toHaveBeenCalled();
+    },
+  );
 });
