@@ -30,6 +30,12 @@ createInterface({ input: process.stdin }).on('line', async line => {
       await writeFile(join(workspace, 'captured-turn.json'), JSON.stringify(params));
     }
     if (prompt.includes('SLOW')) return;
+    if (prompt.includes('CONTENT_THEN_NEW_DISCONNECT')) {
+      send({ method: 'item/started', params: { item: { id: 'image-1', type: 'imageGeneration', status: 'in_progress' } } });
+      send({ method: 'item/completed', params: { item: { id: 'image-1', type: 'imageGeneration', status: 'failed', failure: { code: 'content_policy_violation', message: 'Rejected' } } } });
+      send({ method: 'item/started', params: { item: { id: 'image-2', type: 'imageGeneration', status: 'in_progress' } } });
+      setTimeout(() => process.exit(1), 10); return;
+    }
     if (prompt.includes('TRANSIENT_THEN_NEW_DISCONNECT')) {
       send({ method: 'item/started', params: { item: { id: 'image-1', type: 'imageGeneration', status: 'in_progress' } } });
       send({ method: 'item/completed', params: { item: { id: 'image-1', type: 'imageGeneration', status: 'failed', result: JSON.stringify({ error: { code: 'internal_server_error', message: 'Service temporarily unavailable' } }) } } });

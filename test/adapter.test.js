@@ -92,7 +92,7 @@ test('自動では固定寸法を指定せず、説明と参照構図に適し�
 });
 test('画像ツールの内容判定・利用上限・一時障害を外側のエラーで隠さない', async t => {
   const root = await mkdtemp(join(tmpdir(), 'studio-tool-failure-')); t.after(() => rm(root, { recursive: true, force: true }));
-  for (const [prompt, category, autoRetryAllowed] of [['CONTENT_FAILURE', 'content', false], ['USAGE_FAILURE', 'usage', false], ['TRANSIENT_FAILURE', 'transient', true]]) {
+  for (const [prompt, category, autoRetryAllowed] of [['CONTENT_FAILURE', 'content', true], ['USAGE_FAILURE', 'usage', false], ['TRANSIENT_FAILURE', 'transient', true]]) {
     await assert.rejects(new CodexAdapter({ binary }).generate(validateInput({ prompt }), { workspace: join(root, prompt) }), error => error.category === category && error.autoRetryAllowed === autoRetryAllowed);
   }
 });
@@ -105,12 +105,16 @@ test('画像生成開始後の切断は、結果が不明なため自動再生�
     await assert.rejects(new CodexAdapter({ binary }).generate(validateInput({ prompt }), { workspace: join(root, prompt) }), error => error.category === 'transient' && error.autoRetryAllowed === false);
   }
 });
+test('内容拒否後に別の画像生成が始まって切断した場合は、自動再生成しない', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'studio-content-ambiguous-')); t.after(() => rm(root, { recursive: true, force: true }));
+  await assert.rejects(new CodexAdapter({ binary }).generate(validateInput({ prompt: 'CONTENT_THEN_NEW_DISCONNECT' }), { workspace: join(root, 'workspace') }), error => error.autoRetryAllowed === false);
+});
 test('画像の結果にエラーJSONが入った場合も、内容判定や利用枠を表示する', async () => {
   await assert.rejects(extractImage({ result: JSON.stringify({ error: { code: 'content_policy_violation', message: 'Rejected' } }) }), { code: 'CONTENT_REVIEW' });
   await assert.rejects(extractImage({ result: { error: { type: 'usageLimitExceeded' } } }), { code: 'IMAGE_USAGE_LIMIT' });
 });
 
-test('空の画像失敗でも最終説明・公式TurnErrorを保持し、曖昧な自動再生成を防ぐ', async t => {
+test('空の画像失敗でも最終説明・公式TurnErrorを保持し、内容拒否だけ再試行を許可する', async t => {
   const root = await mkdtemp(join(tmpdir(), 'studio-error-details-')); t.after(() => rm(root, { recursive: true, force: true }));
   for (const [prompt, category, detail] of [
     ['EMPTY_TOOL_CONTENT_COMPLETED', 'content', /content policies/],
@@ -129,7 +133,7 @@ test('空の画像失敗でも最終説明・公式TurnErrorを保持し、曖�
   ]) {
     const progress = [];
     await assert.rejects(new CodexAdapter({ binary }).generate(validateInput({ prompt }), { workspace: join(root, prompt), onProgress: text => progress.push(text) }), error => {
-      assert.equal(error.category, category, prompt); assert.equal(error.autoRetryAllowed, false, prompt);
+      assert.equal(error.category, category, prompt); assert.equal(error.autoRetryAllowed, category === 'content', prompt);
       assert.match(error.details, detail); assert.doesNotMatch(error.details, /private-token|private-key/);
       return true;
     });

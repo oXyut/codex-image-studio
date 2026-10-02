@@ -82,7 +82,7 @@ export function generationError(value, fallbackCode = 'GENERATION_FAILED') {
     /content[_ -]polic(?:y|ies)|moderation[_ -]?(?:blocked|rejected|violation)|safety[_ -](?:policy|violation|blocked)|policy.?violation|\brefusal\b|CONTENT_REVIEW|ガイドライン|ポリシー/i.test(hint) ||
     /(?:性的(?:な)?内容|sexual content)[^\n]{0,100}(?:拒否|停止|rejected|blocked)|(?:拒否|rejected|blocked)[^\n]{0,100}(?:性的(?:な)?内容|sexual content)/i.test(hint)) {
     category = 'content'; resultCode = 'CONTENT_REVIEW'; message = '画像の内容確認により生成が停止しました。';
-    advice = '文章・テンプレート・参照画像は保持しています。意図や内容を確認・編集してから再試行してください。';
+    advice = '文章・テンプレート・参照画像は保持しています。意図や内容を確認・編集してから再試行してください。'; retryable = true;
   } else if (['usagelimitexceeded', 'sessionbudgetexceeded', 'imageusagelimit'].includes(type) ||
     /usage.?limit|quota|credits.*exhaust|IMAGE_USAGE_LIMIT|利用上限/i.test(hint)) {
     category = 'usage'; resultCode = 'IMAGE_USAGE_LIMIT'; message = '画像生成の利用上限に達しました。';
@@ -102,9 +102,9 @@ export function generationError(value, fallbackCode = 'GENERATION_FAILED') {
   if (existing && categories.has(value.category) && !['cancelled', 'timeout'].includes(category)) {
     category = value.category; resultCode = code; message = original || message;
     advice = textDetail(value.advice) || advice;
-    retryable = typeof value.retryable === 'boolean' ? value.retryable : category === 'transient';
+    retryable = typeof value.retryable === 'boolean' ? value.retryable : ['transient', 'content'].includes(category);
   }
-  if (['content', 'usage', 'auth', 'timeout', 'cancelled'].includes(category)) retryable = false;
+  if (['usage', 'auth', 'timeout', 'cancelled'].includes(category)) retryable = false;
   const error = new AppError(message, resultCode, existing ? value.status || 500 : 500);
   Object.assign(error, { category, details, advice, retryable,
     autoRetryAllowed: retryable && (existing && typeof value.autoRetryAllowed === 'boolean' ? value.autoRetryAllowed : true) });

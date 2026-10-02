@@ -188,7 +188,7 @@ export class JobManager {
         return { ...reference, path: await (reference.uploadId ? this.uploads.imagePath(reference.uploadId) : this.store.imagePath(reference.jobId)) };
       }));
       let image;
-      for (let attempt = 1; attempt <= 2; attempt++) {
+      for (let attempt = 1; attempt <= 4; attempt++) {
         await this.store.update(id, { attempts: attempt });
         this.assertRunnable(this.store.get(id));
         if (controller.signal.aborted) throw new AppError('生成をキャンセルしました。', 'CANCELLED');
@@ -204,9 +204,13 @@ export class JobManager {
           break;
         } catch (error) {
           const failure = generationError(error);
-          if (attempt >= 2 || !failure.retryable || !failure.autoRetryAllowed || controller.signal.aborted) throw failure;
+          const maxAttempts = failure.category === 'content' ? 4 : 2;
+          if (attempt >= maxAttempts || !failure.retryable || !failure.autoRetryAllowed || controller.signal.aborted) throw failure;
           await progressWrites;
-          await this.store.update(id, { message: '一時的なエラーのため、同じ入力で1回だけ再試行します。' });
+          const message = failure.category === 'content'
+            ? `内容判定により生成が拒否されたため、同じ入力で再試行します（${attempt}/3回目）。`
+            : '一時的なエラーのため、同じ入力で1回だけ再試行します。';
+          await this.store.update(id, { message });
           await delay(this.retryDelayMs, undefined, { signal: controller.signal });
         }
       }

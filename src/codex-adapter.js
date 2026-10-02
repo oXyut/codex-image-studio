@@ -85,8 +85,9 @@ export class CodexAdapter {
       let explanation;
       if (lastAgentMessage) {
         explanation = generationError(lastAgentMessage, imageError ? 'IMAGE_GENERATION_FAILED' : 'IMAGE_TOOL_UNAVAILABLE');
-        // Text alone does not prove a new image request is safe to submit.
-        explanation.autoRetryAllowed = false;
+        // A reported content refusal can be retried with unchanged input.
+        // Other text-only failures do not prove the image request has ended.
+        explanation.autoRetryAllowed = explanation.category === 'content';
       }
       // Content/usage/auth failures must never be hidden by a transient error
       // from another layer. An empty tool failure must not hide the final reason.
@@ -175,7 +176,8 @@ export class CodexAdapter {
       return { fileName, mime: type.mime, bytes: buffer.length, revisedPrompt: safeMessage(item.revisedPrompt || '') || null, recovered };
     } catch (error) {
       const failure = generationError(error);
-      failure.autoRetryAllowed = failure.autoRetryAllowed !== false && failure.retryable && !images.size && !pendingImages.size && (!imageStarted || imageError?.category === 'transient');
+      failure.autoRetryAllowed = failure.autoRetryAllowed !== false && failure.retryable && !images.size && !pendingImages.size &&
+        (!imageStarted || failure.category === 'content' || imageError?.category === 'transient');
       throw failure;
     } finally {
       clearTimeout(timeout);

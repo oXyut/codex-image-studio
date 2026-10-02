@@ -213,7 +213,8 @@ test('失敗した生成もメタデータを残し、入力編集と再生成�
   const retriedResponse = await app.request(`/api/jobs/${failed.id}/retry`, 'POST'); assert.equal(retriedResponse.status, 202);
   const retried = await retriedResponse.json(); await app.complete(retried.id);
   assert.equal(retried.lineage.operation, 'regenerate'); assert.equal(retried.lineage.sourceJobId, failed.id); assert.equal(retried.prompt, failed.prompt);
-  const graph = await app.snapshot(); assert.equal(graph.commits.length, 3); assert.equal(app.calls.length, 3, '内容判定エラーを自動再試行しない');
+  const graph = await app.snapshot(); assert.equal(graph.commits.length, 3); assert.equal(app.calls.length, 12, '各ジョブで初回と3回の再試行を行い、系譜のノードは増やさない');
+  for (const job of [failed, edit, retried]) assert.equal(app.store.get(job.id).attempts, 4);
 });
 
 test('ジョブ保存後・系譜保存前の停止から再生成と入力編集の出発点を復元する', async t => {

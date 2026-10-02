@@ -16,7 +16,7 @@ test('公式TurnErrorの型を原文から独立して分類し、型と追加�
     assert.ok(error.details.includes('Generation failed'));
     assert.ok(error.details.includes('A concrete provider explanation.'));
     assert.equal(publicFailure(error).details, error.details);
-    assert.equal(error.retryable, category === 'transient');
+    assert.equal(error.retryable, ['transient', 'content'].includes(category));
   }
 });
 
@@ -41,7 +41,7 @@ test('画像のusageLimitExceededと一時的なrateLimitExceededを区別する
 test('内容拒否の明示コードと追加説明を認識し、具体的な説明を失わない', () => {
   for (const code of ['content_policy_violation', 'moderation_blocked', 'safety_policy_violation']) {
     const error = generationError({ error: { code, message: 'The image request was rejected.' } });
-    assert.equal(error.category, 'content'); assert.equal(error.autoRetryAllowed, false);
+    assert.equal(error.category, 'content'); assert.equal(error.autoRetryAllowed, true);
     assert.ok(error.details.includes(code)); assert.ok(error.details.includes('The image request was rejected.'));
   }
   for (const text of ['moderation_blocked', 'The image request could not be completed because it violates our content policies.', 'The request violates the content policy.']) {
@@ -61,7 +61,7 @@ test('未知の失敗は内容拒否と断定せず、最終説明の原文を�
 test('実際に返された日本語の性的内容による拒否を認識し、曖昧な失敗から区別する', () => {
   const message = '画像生成ツールが性的内容としてリクエストを拒否したため、画像を生成できませんでした（完了率0%）。\n\n再試行せず終了します。ユーザー側での操作は不要です。';
   const result = publicFailure(generationError(message, 'IMAGE_GENERATION_FAILED'));
-  assert.equal(result.code, 'CONTENT_REVIEW'); assert.equal(result.category, 'content'); assert.equal(result.retryable, false); assert.equal(result.details, message);
+  assert.equal(result.code, 'CONTENT_REVIEW'); assert.equal(result.category, 'content'); assert.equal(result.retryable, true); assert.equal(result.details, message);
   assert.equal(generationError('性的内容による判定か、通信障害かは不明です。').category, 'unknown');
 });
 
@@ -82,6 +82,14 @@ test('キャンセルと全体タイムアウトを通信障害より優先し�
     assert.equal(first.code, code); assert.equal(first.category, category); assert.equal(first.retryable, false); assert.equal(first.autoRetryAllowed, false);
     const second = generationError(first); assert.equal(second.category, category); assert.equal(second.autoRetryAllowed, false);
   }
+});
+
+test('内容判定の再正規化でも、未確定の生成を再試行しない判定を保持する', () => {
+  const error = generationError({ code: 'content_policy_violation', message: 'Rejected' });
+  error.autoRetryAllowed = false;
+  const normalized = generationError(generationError(error));
+  assert.equal(normalized.category, 'content'); assert.equal(normalized.retryable, true);
+  assert.equal(normalized.autoRetryAllowed, false); assert.equal(normalized.details, error.details);
 });
 
 test('原文・追加説明・再正規化した詳細に含まれる認証情報をマスクする', () => {
