@@ -98,7 +98,107 @@ describe("テンプレートの管理", () => {
     expect(within(dialog).getByLabelText(/プロンプトの本文/)).toHaveValue(
       "制作中のプロンプト",
     );
+    expect(within(dialog).getByLabelText(/名前/)).toHaveValue(
+      "制作中のプロンプト",
+    );
     expect(within(dialog).getByLabelText(/名前/)).toHaveFocus();
+  });
+
+  it("本文だけで名前を自動入力し、本文の変更に追従して保存する", async () => {
+    const user = userEvent.setup();
+    const api = vi.fn().mockResolvedValue(current);
+    renderView(context({ api }));
+    await user.click(screen.getByRole("button", { name: "新しいテンプレート" }));
+    const dialog = screen.getByRole("dialog");
+    const name = within(dialog).getByLabelText(/名前/);
+    const body = within(dialog).getByLabelText(/プロンプトの本文/);
+    await user.type(body, "白い背景");
+    expect(name).toHaveValue("白い背景");
+    await user.type(body, "と自然光");
+    expect(name).toHaveValue("白い背景と自然光");
+    await user.clear(body);
+    expect(name).toHaveValue("");
+    await user.type(body, "窓からの光");
+    await user.click(within(dialog).getByRole("button", { name: "保存" }));
+    await waitFor(() =>
+      expect(api).toHaveBeenCalledWith(
+        "/api/templates",
+        expect.objectContaining({ method: "POST" }),
+      ),
+    );
+    expect(JSON.parse(api.mock.calls[0][1].body)).toMatchObject({
+      name: "窓からの光",
+      body: "窓からの光",
+    });
+  });
+
+  it("手動入力した名前を保持し、名前を空にしたら次の本文入力で自動入力を再開する", async () => {
+    const user = userEvent.setup();
+    renderView(context());
+    await user.click(screen.getByRole("button", { name: "新しいテンプレート" }));
+    const dialog = screen.getByRole("dialog");
+    const name = within(dialog).getByLabelText(/名前/);
+    const body = within(dialog).getByLabelText(/プロンプトの本文/);
+    await user.type(name, "背景の設定");
+    await user.type(body, "白い背景");
+    expect(name).toHaveValue("背景の設定");
+    await user.clear(name);
+    await user.type(body, "と自然光");
+    expect(name).toHaveValue("白い背景と自然光");
+    await user.clear(name);
+    await user.type(name, "別の名前");
+    await user.type(body, "を使う");
+    expect(name).toHaveValue("別の名前");
+
+    await user.click(within(dialog).getByRole("button", { name: "キャンセル" }));
+    await user.click(screen.getByRole("button", { name: "新しいテンプレート" }));
+    await user.type(screen.getByLabelText(/プロンプトの本文/), "新しい本文");
+    expect(screen.getByLabelText(/名前/)).toHaveValue("新しい本文");
+  });
+
+  it("名前と本文が同じ既存テンプレートも本文の変更に追従する", async () => {
+    const user = userEvent.setup();
+    const template = { ...current, name: "白い背景", body: "白い背景" };
+    const api = vi.fn().mockResolvedValue(template);
+    renderView(context({ templates: [template], api }));
+    await user.click(screen.getByRole("button", { name: "編集" }));
+    const dialog = screen.getByRole("dialog");
+    await user.type(within(dialog).getByLabelText(/プロンプトの本文/), "と自然光");
+    expect(within(dialog).getByLabelText(/名前/)).toHaveValue("白い背景と自然光");
+    await user.click(within(dialog).getByRole("button", { name: "保存" }));
+    await waitFor(() => expect(api).toHaveBeenCalledOnce());
+    expect(api.mock.calls[0][0]).toBe(`/api/templates/${template.id}`);
+    expect(api.mock.calls[0][1].method).toBe("PATCH");
+    expect(JSON.parse(api.mock.calls[0][1].body)).toMatchObject({
+      name: "白い背景と自然光",
+      body: "白い背景と自然光",
+      expectedVersion: 2,
+    });
+  });
+
+  it("長文や改行を含む本文から80文字以内の名前を作り、本文と絵文字を壊さない", async () => {
+    const user = userEvent.setup();
+    const prefix = "あ".repeat(77);
+    const prompt = `  ${prefix}\n🌸白い背景  `;
+    const api = vi.fn().mockResolvedValue(current);
+    renderView(context({ api }), { key: 1, body: prompt });
+    const dialog = await screen.findByRole("dialog");
+    const name = within(dialog).getByLabelText(/名前/);
+    const body = within(dialog).getByLabelText(/プロンプトの本文/);
+    expect(name).toHaveValue(`${prefix} 🌸`);
+    expect(body).toHaveValue(prompt);
+    await user.clear(body);
+    await user.paste(`${"あ".repeat(79)}🌸白い背景`);
+    expect(name).toHaveValue("あ".repeat(79));
+    await user.clear(body);
+    await user.paste(`${"あ".repeat(79)}\n🌸白い背景`);
+    expect(name).toHaveValue("あ".repeat(79));
+    await user.click(within(dialog).getByRole("button", { name: "保存" }));
+    await waitFor(() => expect(api).toHaveBeenCalledOnce());
+    expect(JSON.parse(api.mock.calls[0][1].body)).toMatchObject({
+      name: "あ".repeat(79),
+      body: `${"あ".repeat(79)}\n🌸白い背景`,
+    });
   });
 
   it("Escapeで編集を閉じると、編集を開いた操作へフォーカスを戻す", async () => {
@@ -137,8 +237,10 @@ describe("テンプレートの管理", () => {
     await user.click(within(dialog).getByRole("button", { name: "保存" }));
     await within(dialog).findByRole("alert");
     expect(body).toHaveValue("編集中の内容を残す。");
+    expect(within(dialog).getByLabelText(/名前/)).toHaveValue(current.name);
     expect(JSON.parse(api.mock.calls[0][1].body)).toMatchObject({
       expectedVersion: 2,
+      name: current.name,
       body: "編集中の内容を残す。",
     });
     expect(api).toHaveBeenCalledTimes(1);
@@ -146,6 +248,7 @@ describe("テンプレートの管理", () => {
       within(dialog).getByRole("button", { name: "最新を読み込む" }),
     );
     await waitFor(() => expect(body).toHaveValue("別の操作で更新した本文。"));
+    expect(within(dialog).getByLabelText(/名前/)).toHaveValue(newer.name);
     await user.click(within(dialog).getByRole("button", { name: "保存" }));
     await waitFor(() =>
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
