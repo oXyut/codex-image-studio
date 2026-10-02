@@ -1,29 +1,23 @@
-import { useEffect, useRef, useState } from "react";
-import { Check, ImagePlus, Loader2, Search, Upload } from "lucide-react";
-import { toast } from "sonner";
-import { useStudio } from "@/lib/studio-context";
 import { imageTitle, isComplete } from "@/lib/format";
+import { useStudio } from "@/lib/studio-context";
 import type { ImageSource, Reference } from "@/lib/types";
-import { uploadFileType } from "@legacy/studio-features.js";
-import { referenceRoles } from "@legacy/prompt-utils.js";
+import { referenceRoles } from "@shared/prompt-utils.js";
+import { uploadFileType } from "@shared/studio-features.js";
+import { Check, ImagePlus, Loader2, Search, Upload } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 import { Button } from "./ui/button";
-import { Input } from "./ui/input";
 import {
   Dialog,
   DialogContent,
-  DialogHeader,
-  DialogTitle,
   DialogDescription,
   DialogFooter,
+  DialogHeader,
+  DialogTitle,
 } from "./ui/dialog";
+import { Input } from "./ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { Tabs, TabsList, TabsTrigger } from "./ui/tabs";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "./ui/select";
 export function ReferencePicker({
   open,
   onOpenChange,

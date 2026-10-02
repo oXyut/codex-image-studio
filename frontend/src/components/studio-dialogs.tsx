@@ -1,20 +1,20 @@
-import { useEffect, useState } from "react";
-import { Loader2, RotateCcw, Trash2 } from "lucide-react";
-import { toast } from "sonner";
-import { useStudio } from "@/lib/studio-context";
-import { dateLabel, statusLabels } from "@/lib/format";
-import type { ImageSource } from "@/lib/types";
 import { ApiError } from "@/lib/api";
+import { dateLabel, statusLabels } from "@/lib/format";
+import { useStudio } from "@/lib/studio-context";
+import type { ImageSource } from "@/lib/types";
+import { Loader2, RotateCcw, Trash2 } from "lucide-react";
+import { useEffect, useState } from "react";
+import { toast } from "sonner";
+import { ImageViewer } from "./image-viewer";
 import { Button } from "./ui/button";
 import {
   Dialog,
   DialogContent,
-  DialogHeader,
-  DialogTitle,
   DialogDescription,
   DialogFooter,
+  DialogHeader,
+  DialogTitle,
 } from "./ui/dialog";
-import { ImageViewer } from "./image-viewer";
 type PlanNode = {
   id: string;
   kind: "job" | "upload";
@@ -71,7 +71,7 @@ export function StudioDialogs({
         : "",
     );
     try {
-      setPlan(await studio.api(`/api/lineage/nodes/${id}/deletion-preview`));
+      setPlan(await studio.api<Plan>(`/api/lineage/nodes/${id}/deletion-preview`));
     } catch (e) {
       setError((e as Error).message);
     }

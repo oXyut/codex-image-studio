@@ -1,19 +1,8 @@
-import {
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-  within,
-} from "@testing-library/react";
+import { StudioContext } from "@/lib/studio-context";
+import type { StudioContextValue, Template, TemplateVersion } from "@/lib/types";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { StudioContext } from "@/lib/studio-context";
-import type {
-  StudioContextValue,
-  Template,
-  TemplateVersion,
-} from "@/lib/types";
 import { TemplatePicker, TemplatesView } from "./templates";
 
 const current: Template = {
@@ -33,13 +22,15 @@ const old: TemplateVersion = {
   body: "過去の暖色。",
   version: 1,
   createdAt: "2026-10-01T00:00:00Z",
-  operation: "create",
+  templateId: current.id, archivedAt: null,
+        operation: "create",
 };
 const latest: TemplateVersion = {
   ...current,
   version: 2,
   createdAt: "2026-10-02T00:00:00Z",
-  operation: "update",
+  templateId: current.id, archivedAt: null,
+        operation: "update",
 };
 
 function context(

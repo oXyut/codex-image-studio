@@ -1,28 +1,18 @@
-import {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
-import { toast } from "sonner";
 import { createApi } from "@/lib/api";
+import { cloneDraft, draftKey, loadDraft, reconcileDraft, sourceDraft } from "@/lib/draft";
 import { StudioContext } from "@/lib/studio-context";
-import {
-  cloneDraft,
-  draftKey,
-  loadDraft,
-  reconcileDraft,
-  sourceDraft,
-} from "@/lib/draft";
 import type {
   Draft,
   ImageSource,
   LineageMetadata,
-  Template,
-  View,
   StudioContextValue,
+  Template,
+  TemplateLayer,
+  View,
 } from "@/lib/types";
+import type { Health } from "@shared/types.js";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { toast } from "sonner";
 import { StudioDialogs } from "./studio-dialogs";
 const api = createApi();
 export function StudioProvider({ children }: { children: ReactNode }) {
@@ -101,7 +91,7 @@ export function StudioProvider({ children }: { children: ReactNode }) {
   }, []);
   const refreshHealth = useCallback(async () => {
     try {
-      setHealth(await api("/api/health?refresh=1"));
+      setHealth(await api<Health>("/api/health?refresh=1"));
     } catch (error) {
       setHealth({
         ready: false,
@@ -186,7 +176,7 @@ export function StudioProvider({ children }: { children: ReactNode }) {
     toast.success("参照に追加しました。入力中の内容は保持しています。");
     return true;
   };
-  const addTemplate = (template: Template) => {
+  const addTemplate = (template: TemplateLayer) => {
     const existing = draftRef.current.layers.find(
       (layer) => layer.id === template.id,
     );

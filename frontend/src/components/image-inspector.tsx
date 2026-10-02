@@ -1,4 +1,19 @@
-import { useEffect, useId, useMemo, useState, type FormEvent } from "react";
+import {
+  ImageActionMenu,
+  ImageContextMenu,
+  ImageDownload,
+  ImageFavoriteButton,
+} from "@/components/image-actions";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { dateLabel, imageTitle, isComplete, statusLabels, styleLabels } from "@/lib/format";
+import { useStudio } from "@/lib/studio-context";
+import type { ImageSource } from "@/lib/types";
+import { canvasSizeLabel } from "@shared/canvas-options.js";
+import { buildLineageGraph } from "@shared/lineage-utils.js";
 import {
   ArrowRight,
   CheckCircle2,
@@ -14,35 +29,9 @@ import {
   Square,
   X,
 } from "lucide-react";
+import { useEffect, useId, useMemo, useState, type FormEvent } from "react";
 import { toast } from "sonner";
-import { canvasSizeLabel } from "@legacy/canvas-options.js";
-import { buildLineageGraph } from "@legacy/lineage-utils.js";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from "@/components/ui/accordion";
 import { GenerationRecovery } from "@/components/generation-recovery";
-import {
-  ImageActionMenu,
-  ImageContextMenu,
-  ImageDownload,
-  ImageFavoriteButton,
-} from "@/components/image-actions";
-import { useStudio } from "@/lib/studio-context";
-import {
-  dateLabel,
-  imageTitle,
-  isComplete,
-  statusLabels,
-  styleLabels,
-} from "@/lib/format";
-import type { ImageSource } from "@/lib/types";
 
 function ImageRelations({
   title,
@@ -113,7 +102,7 @@ export function ImageInspector({
   const studio = useStudio();
   const id = useId();
   const graph = useMemo(
-    () => buildLineageGraph(studio.metadata as any, studio.jobs),
+    () => buildLineageGraph(studio.metadata, studio.jobs),
     [studio.metadata, studio.jobs],
   );
   const node = graph.nodeMap.get(source.id);

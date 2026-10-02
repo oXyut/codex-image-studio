@@ -1,10 +1,25 @@
-import { useState } from "react";
+import { ImageActions, ImageContextMenu } from "@/components/image-actions";
+import { ReferencePicker } from "@/components/reference-picker";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
+import { dateLabel, imageTitle, statusLabels, styleLabels } from "@/lib/format";
+import { useStudio } from "@/lib/studio-context";
+import { cn } from "@/lib/utils";
+import { canvasSizeLabel } from "@shared/canvas-options.js";
+import { batchVisibility } from "@shared/deletion-ui.js";
+import { categoryLabel, composePrompt, referenceRoles } from "@shared/prompt-utils.js";
 import {
   ArrowDown,
   ArrowUp,
   Check,
   ChevronRight,
   FilePlus,
+  GitBranch,
   ImagePlus,
   Loader2,
   Maximize2,
@@ -13,57 +28,10 @@ import {
   Sparkles,
   Undo2,
   X,
-  Download,
-  GitBranch,
 } from "lucide-react";
-import { useStudio } from "@/lib/studio-context";
-import {
-  composePrompt,
-  categoryLabel,
-  referenceRoles,
-} from "@legacy/prompt-utils.js";
-import { batchVisibility } from "@legacy/deletion-ui.js";
-import { canvasSizeLabel } from "@legacy/canvas-options.js";
-import {
-  dateLabel,
-  imageTitle,
-  statusLabels,
-  styleLabels,
-} from "@/lib/format";
-import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
-import { Badge } from "@/components/ui/badge";
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from "@/components/ui/accordion";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-} from "@/components/ui/dialog";
-import {
-  Popover,
-  PopoverTrigger,
-  PopoverContent,
-} from "@/components/ui/popover";
+import { useState } from "react";
 import { TemplatePicker } from "./templates";
-import { ReferencePicker } from "@/components/reference-picker";
-import { ImageActions, ImageContextMenu } from "@/components/image-actions";
 import { GenerationRecovery } from "@/components/generation-recovery";
-import { cn } from "@/lib/utils";
 const examples = [
   "朝のやわらかな光が差し込む、静かな森。木々の間に薄い霧が漂う。自然な写真の質感。",
   "白い背景に置いた、シンプルなガラスの香水ボトル。やわらかな影、スタジオ撮影。",
