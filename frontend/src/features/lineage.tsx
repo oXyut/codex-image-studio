@@ -472,8 +472,8 @@ export function LineageView() {
   }
 
   return (
-    <section className="flex h-full min-h-0 flex-col" aria-label="画像の系統図">
-      <div className="border-b bg-white px-5 py-5 lg:px-7">
+    <section className="flex min-h-full flex-col xl:h-full xl:min-h-0" aria-label="画像の系統図">
+      <div className="shrink-0 border-b bg-white px-5 py-5 lg:px-7">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
             <h1 className="text-2xl font-semibold tracking-tight text-zinc-950">
@@ -510,9 +510,9 @@ export function LineageView() {
           </Button>
         </div>
       </div>
-      <div className="flex min-h-0 flex-1 flex-col xl:flex-row">
-        <div className="flex min-h-0 flex-1 flex-col">
-          <div className="space-y-4 border-b bg-white px-5 py-4 lg:px-7">
+      <div className="flex shrink-0 flex-col xl:min-h-0 xl:flex-1 xl:flex-row">
+        <div className="flex min-w-0 shrink-0 flex-col xl:min-h-0 xl:flex-1">
+          <div className="shrink-0 space-y-4 border-b bg-white px-5 py-4 lg:px-7">
             <div className="flex flex-wrap items-center gap-3">
               <div className="relative min-w-48 flex-1">
                 <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-zinc-500" />
@@ -638,7 +638,7 @@ export function LineageView() {
             </div>
           </div>
           <div
-            className="relative min-h-[440px] flex-1 bg-zinc-50 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-zinc-400 xl:min-h-0"
+            className="relative h-[60dvh] min-h-[440px] shrink-0 overflow-hidden bg-zinc-50 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-zinc-400 xl:h-auto xl:min-h-0 xl:flex-1"
             role="region"
             aria-label="画像のつながり。背景をドラッグ、上下左右キーで移動できます"
             tabIndex={0}
@@ -770,7 +770,7 @@ export function LineageView() {
           {(graph.missingEdges.length > 0 || graph.cyclicEdges.length > 0) && (
             <div
               role="status"
-              className="border-t border-amber-200 bg-amber-50 px-5 py-3 text-sm leading-relaxed text-amber-900"
+              className="shrink-0 border-t border-amber-200 bg-amber-50 px-5 py-3 text-sm leading-relaxed text-amber-900"
             >
               {graph.missingEdges.length > 0 && (
                 <p>
@@ -785,7 +785,10 @@ export function LineageView() {
           )}
         </div>
         <aside
-          className="max-h-[70vh] shrink-0 overflow-y-auto border-t bg-white xl:max-h-none xl:w-[336px] xl:border-l xl:border-t-0"
+          className={cn(
+            "shrink-0 overflow-hidden border-t bg-white xl:w-[336px] xl:border-l xl:border-t-0",
+            selectedSource && "h-[70dvh] xl:h-auto",
+          )}
           aria-label="選択した画像の詳細"
         >
           {selectedSource ? (
