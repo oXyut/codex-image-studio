@@ -1,9 +1,19 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { StudioContext } from "@/lib/studio-context";
 import type { ImageSource, StudioContextValue } from "@/lib/types";
-import { ImageActions, ImageFavoriteButton } from "./image-actions";
+import {
+  ImageActions,
+  ImageContextMenu,
+  ImageFavoriteButton,
+} from "./image-actions";
 import { ImageInspector } from "./image-inspector";
 
 afterEach(cleanup);
@@ -79,7 +89,9 @@ describe("共有画像操作", () => {
         <ImageActions source={image} />
       </StudioContext.Provider>,
     );
-    const add = screen.getByRole("button", { name: "朝霧の森の家をお気に入りに追加" });
+    const add = screen.getByRole("button", {
+      name: "朝霧の森の家をお気に入りに追加",
+    });
     expect(add).toHaveAttribute("aria-pressed", "false");
     await user.click(add);
     expect(studio.setFavorite).toHaveBeenCalledWith(image, true);
@@ -91,12 +103,16 @@ describe("共有画像操作", () => {
         <ImageActions source={favorite} />
       </StudioContext.Provider>,
     );
-    const remove = screen.getByRole("button", { name: "朝霧の森の家をお気に入りから外す" });
+    const remove = screen.getByRole("button", {
+      name: "朝霧の森の家をお気に入りから外す",
+    });
     expect(remove).toHaveAttribute("aria-pressed", "true");
     await user.click(remove);
     expect(studio.setFavorite).toHaveBeenLastCalledWith(favorite, false);
     rerender(
-      <StudioContext.Provider value={{ ...studio, favoritePendingIds: [image.id] }}>
+      <StudioContext.Provider
+        value={{ ...studio, favoritePendingIds: [image.id] }}
+      >
         <ImageActions source={favorite} />
       </StudioContext.Provider>,
     );
@@ -108,10 +124,18 @@ describe("共有画像操作", () => {
     (status) => {
       render(
         <StudioContext.Provider value={context()}>
-          <ImageFavoriteButton source={{ ...image, status, ...(status === "uploaded" ? { kind: "upload" as const } : {}) }} />
+          <ImageFavoriteButton
+            source={{
+              ...image,
+              status,
+              ...(status === "uploaded" ? { kind: "upload" as const } : {}),
+            }}
+          />
         </StudioContext.Provider>,
       );
-      expect(screen.queryByRole("button", { name: /お気に入り/ })).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: /お気に入り/ }),
+      ).not.toBeInTheDocument();
     },
   );
 
@@ -319,5 +343,145 @@ describe("画像詳細", () => {
       body: JSON.stringify({ title: "夕暮れの森", notes: "暖色で検討" }),
     });
     expect(studio.refresh).toHaveBeenCalled();
+  });
+});
+
+describe("画像の右クリック操作", () => {
+  function renderMenu(studio: StudioContextValue, source = image) {
+    return render(
+      <StudioContext.Provider value={studio}>
+        <ImageContextMenu source={source}>
+          <button onClick={() => studio.select(source.id)}>対象画像</button>
+        </ImageContextMenu>
+      </StudioContext.Provider>,
+    );
+  }
+
+  it.each([
+    ["拡大プレビュー", "openPreview", [image]],
+    ["参照に追加", "addReference", [image]],
+    ["お気に入りに追加", "setFavorite", [image, true]],
+    ["この画像を参照して編集", "replaceFromSource", [image, true]],
+    ["元の入力に置き換えて編集", "replaceFromSource", [image]],
+    ["元の設定で4枚を今すぐ生成", "retry", [image]],
+    ["画像と下流をゴミ箱へ", "requestDelete", [image]],
+    ["系統図で見る", "navigate", ["lineage", image.id, ""]],
+  ] as const)(
+    "%sは選択中の画像ではなく右クリックした対象へ実行する",
+    async (label, action, args) => {
+      const studio = context({ selectedId: "別の画像" });
+      const user = userEvent.setup();
+      renderMenu(studio);
+      fireEvent.contextMenu(screen.getByRole("button", { name: "対象画像" }), {
+        clientX: 200,
+        clientY: 150,
+      });
+      const menu = await screen.findByRole("menu", {
+        name: "朝霧の森の家の操作",
+      });
+      expect(menu).toBeVisible();
+      expect(studio.select).not.toHaveBeenCalled();
+      expect(studio.retry).not.toHaveBeenCalled();
+      expect(studio.requestDelete).not.toHaveBeenCalled();
+      expect(
+        screen.getByRole("menuitem", { name: "画像をダウンロード" }),
+      ).toHaveAttribute("href", image.image!.downloadUrl);
+      await user.click(screen.getByRole("menuitem", { name: label }));
+      expect(studio[action]).toHaveBeenCalledWith(...args);
+      expect(studio.select).not.toHaveBeenCalled();
+      expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    },
+  );
+
+  it.each(["running", "queued"])(
+    "%sでは停止でき、未完成の画像を参照・再生成できない",
+    async (status) => {
+      const source = { ...image, image: undefined, status };
+      const studio = context();
+      const user = userEvent.setup();
+      renderMenu(studio, source);
+      fireEvent.contextMenu(screen.getByRole("button", { name: "対象画像" }));
+      expect(
+        screen.queryByRole("menuitem", { name: "参照に追加" }),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("menuitem", { name: /お気に入り/ }),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.getByRole("menuitem", { name: /今すぐ生成/ }),
+      ).toHaveAttribute("aria-disabled", "true");
+      expect(
+        screen.getByRole("menuitem", { name: "この画像を参照して編集" }),
+      ).toHaveAttribute("aria-disabled", "true");
+      await user.click(screen.getByRole("menuitem", { name: "生成を停止" }));
+      expect(studio.cancel).toHaveBeenCalledWith(source);
+      expect(studio.retry).not.toHaveBeenCalled();
+    },
+  );
+
+  it("未接続・送信中・お気に入り保存中の操作制限を引き継ぐ", () => {
+    const studio = context({
+      health: { ready: false, message: "" },
+      favoritePendingIds: [image.id],
+    });
+    const { rerender } = renderMenu(studio);
+    fireEvent.contextMenu(screen.getByRole("button", { name: "対象画像" }));
+    expect(
+      screen.getByRole("menuitem", { name: /今すぐ生成/ }),
+    ).toHaveAttribute("aria-disabled", "true");
+    expect(
+      screen.getByRole("menuitem", { name: "お気に入りに追加" }),
+    ).toHaveAttribute("aria-disabled", "true");
+    rerender(
+      <StudioContext.Provider
+        value={{
+          ...studio,
+          health: { ready: true, message: "" },
+          submitting: true,
+        }}
+      >
+        <ImageContextMenu source={image}>
+          <button>対象画像</button>
+        </ImageContextMenu>
+      </StudioContext.Provider>,
+    );
+    expect(
+      screen.getByRole("menuitem", { name: /今すぐ生成/ }),
+    ).toHaveAttribute("aria-disabled", "true");
+  });
+
+  it("アップロード起点では参照・ダウンロード・削除を使え、生成専用の操作を出さない", () => {
+    const upload = { ...image, kind: "upload" as const, status: "uploaded" };
+    renderMenu(context(), upload);
+    fireEvent.contextMenu(screen.getByRole("button", { name: "対象画像" }));
+    expect(
+      screen.getByRole("menuitem", { name: "参照に追加" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("menuitem", { name: "画像と下流をゴミ箱へ" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("menuitem", {
+        name: /今すぐ生成|お気に入り|元の入力に/,
+      }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("通常クリックを保ち、Shift+F10とメニューキーで開いてキーボードで閉じられる", async () => {
+    const studio = context();
+    const user = userEvent.setup();
+    renderMenu(studio);
+    const target = screen.getByRole("button", { name: "対象画像" });
+    await user.click(target);
+    expect(studio.select).toHaveBeenCalledExactlyOnceWith(image.id);
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    await user.keyboard("{Shift>}{F10}{/Shift}");
+    expect(screen.getByRole("menu")).toBeVisible();
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    await waitFor(() => expect(target).toHaveFocus());
+    fireEvent.keyDown(target, { key: "ContextMenu" });
+    await user.keyboard("{ArrowDown}{Home}{Enter}");
+    expect(studio.openPreview).toHaveBeenCalledWith(image);
   });
 });

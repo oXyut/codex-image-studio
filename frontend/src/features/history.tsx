@@ -24,7 +24,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ImageFavoriteButton } from "@/components/image-actions";
+import {
+  ImageContextMenu,
+  ImageFavoriteButton,
+} from "@/components/image-actions";
 import { FailedJobsDeleteDialog } from "@/components/failed-jobs-delete-dialog";
 import { useStudio } from "@/lib/studio-context";
 import {
@@ -65,89 +68,93 @@ function HistoryCard({
   const selected = studio.selectedId === source.id;
   const active = ["running", "queued"].includes(source.status);
   return (
-    <article className="min-w-0 space-y-2">
-      <div className="group relative">
-        <button
-          type="button"
-          onClick={onSelect}
-          aria-label={`${imageTitle(source)}を選択`}
-          aria-haspopup="dialog"
-          aria-pressed={selected}
-          className={cn(
-            "relative block aspect-[3/2] w-full overflow-hidden rounded-xl border bg-muted/50 text-left transition-shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-            selected && "ring-2 ring-foreground ring-offset-2",
-          )}
-        >
-          {source.image ? (
-            <img
-              src={source.image.url}
-              alt={imageTitle(source)}
-              loading="lazy"
-              className="size-full object-cover"
-            />
-          ) : (
-            <span className="flex h-full flex-col items-center justify-center gap-3 px-5 text-muted-foreground">
-              {active ? (
-                <LoaderCircle
-                  className={cn(
-                    "size-7",
-                    source.status === "running" && "animate-spin",
-                  )}
-                />
-              ) : (
-                <ImageIcon className="size-7" />
-              )}
-              <span className="text-sm">
-                {statusLabels[source.status] || source.status}
-              </span>
-              {source.status === "failed" && (
-                <span className="line-clamp-2 text-center text-sm">
-                  {errorMessage(source)}
-                </span>
-              )}
-            </span>
-          )}
-          {selected && (
-            <span className="absolute right-3 top-3 rounded-full bg-background p-1.5 shadow-sm">
-              <Check className="size-4" />
-            </span>
-          )}
-          {source.status !== "succeeded" && (
-            <Badge
-              variant={source.status === "failed" ? "destructive" : "secondary"}
-              className="absolute left-3 top-3"
-            >
-              {statusLabels[source.status] || source.status}
-            </Badge>
-          )}
-        </button>
-        <ImageFavoriteButton
-          source={source}
-          className="absolute left-3 top-3 shadow-sm"
-        />
-        {isComplete(source) && (
-          <Button
-            variant="secondary"
-            size="sm"
-            className="absolute bottom-3 right-3 border border-foreground/10 shadow-sm xl:opacity-0 xl:group-hover:opacity-100 xl:group-focus-within:opacity-100"
-            onClick={() => studio.addReference(source)}
-            aria-label={`${imageTitle(source)}を参照に追加`}
+    <ImageContextMenu source={source}>
+      <article className="min-w-0 space-y-2">
+        <div className="group relative">
+          <button
+            type="button"
+            onClick={onSelect}
+            aria-label={`${imageTitle(source)}を選択`}
+            aria-haspopup="dialog"
+            aria-pressed={selected}
+            className={cn(
+              "relative block aspect-[3/2] w-full overflow-hidden rounded-xl border bg-muted/50 text-left transition-shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+              selected && "ring-2 ring-foreground ring-offset-2",
+            )}
           >
-            <ImagePlus className="size-4" />
-            参照に追加
-          </Button>
-        )}
-      </div>
-      <h3 className="truncate text-sm font-medium" title={imageTitle(source)}>
-        {source.batch ? `${source.batch.index}. ` : ""}
-        {imageTitle(source)}
-      </h3>
-      <div className="flex flex-wrap gap-x-2 text-sm text-muted-foreground">
-        <time dateTime={source.createdAt}>{dateLabel(source.createdAt)}</time>
-        <span>·</span>
-        <span>{canvasSizeLabel(source.size, { full: true })}</span>
-      </div>
-    </article>
+            {source.image ? (
+              <img
+                src={source.image.url}
+                alt={imageTitle(source)}
+                loading="lazy"
+                className="size-full object-cover"
+              />
+            ) : (
+              <span className="flex h-full flex-col items-center justify-center gap-3 px-5 text-muted-foreground">
+                {active ? (
+                  <LoaderCircle
+                    className={cn(
+                      "size-7",
+                      source.status === "running" && "animate-spin",
+                    )}
+                  />
+                ) : (
+                  <ImageIcon className="size-7" />
+                )}
+                <span className="text-sm">
+                  {statusLabels[source.status] || source.status}
+                </span>
+                {source.status === "failed" && (
+                  <span className="line-clamp-2 text-center text-sm">
+                    {errorMessage(source)}
+                  </span>
+                )}
+              </span>
+            )}
+            {selected && (
+              <span className="absolute right-3 top-3 rounded-full bg-background p-1.5 shadow-sm">
+                <Check className="size-4" />
+              </span>
+            )}
+            {source.status !== "succeeded" && (
+              <Badge
+                variant={
+                  source.status === "failed" ? "destructive" : "secondary"
+                }
+                className="absolute left-3 top-3"
+              >
+                {statusLabels[source.status] || source.status}
+              </Badge>
+            )}
+          </button>
+          <ImageFavoriteButton
+            source={source}
+            className="absolute left-3 top-3 shadow-sm"
+          />
+          {isComplete(source) && (
+            <Button
+              variant="secondary"
+              size="sm"
+              className="absolute bottom-3 right-3 border border-foreground/10 shadow-sm xl:opacity-0 xl:group-hover:opacity-100 xl:group-focus-within:opacity-100"
+              onClick={() => studio.addReference(source)}
+              aria-label={`${imageTitle(source)}を参照に追加`}
+            >
+              <ImagePlus className="size-4" />
+              参照に追加
+            </Button>
+          )}
+        </div>
+        <h3 className="truncate text-sm font-medium" title={imageTitle(source)}>
+          {source.batch ? `${source.batch.index}. ` : ""}
+          {imageTitle(source)}
+        </h3>
+        <div className="flex flex-wrap gap-x-2 text-sm text-muted-foreground">
+          <time dateTime={source.createdAt}>{dateLabel(source.createdAt)}</time>
+          <span>·</span>
+          <span>{canvasSizeLabel(source.size, { full: true })}</span>
+        </div>
+      </article>
+    </ImageContextMenu>
   );
 }
 
@@ -159,7 +166,9 @@ export function HistoryView() {
   const [batch, setBatch] = useState("all");
   const [moreFilters, setMoreFilters] = useState(false);
   const [deleteFailedOpen, setDeleteFailedOpen] = useState(false);
-  const failedCount = studio.jobs.filter((job) => job.status === "failed").length;
+  const failedCount = studio.jobs.filter(
+    (job) => job.status === "failed",
+  ).length;
   const batches = useMemo(() => {
     const map = new Map<string, ImageSource>();
     studio.jobs.forEach((job) => {

@@ -1,5 +1,6 @@
 import {
   cleanup,
+  fireEvent,
   render,
   screen,
   waitFor,
@@ -85,6 +86,93 @@ beforeAll(() => {
 afterEach(cleanup);
 
 describe("テンプレートの管理", () => {
+  it("未選択の行の右クリックから編集し、閉じるとその行へフォーカスを戻す", async () => {
+    const target = {
+      ...current,
+      id: "other",
+      name: "別のテンプレート",
+      body: "別の本文",
+    };
+    const value = context({ templates: [current, target] });
+    const user = userEvent.setup();
+    renderView(value);
+    const trigger = screen.getByRole("button", {
+      name: "別のテンプレートの詳細",
+    });
+    fireEvent.contextMenu(trigger.closest("tr")!);
+    await user.click(screen.getByRole("menuitem", { name: "編集" }));
+    expect(
+      within(screen.getByRole("dialog")).getByLabelText(/プロンプトの本文/),
+    ).toHaveValue(target.body);
+    expect(value.addTemplate).not.toHaveBeenCalled();
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(trigger).toHaveFocus());
+  });
+
+  it("右クリックした行の版でお気に入り変更とアーカイブを行う", async () => {
+    const target = {
+      ...current,
+      id: "other",
+      name: "別のテンプレート",
+      version: 7,
+      favorite: false,
+    };
+    const value = context({ templates: [current, target] });
+    const user = userEvent.setup();
+    renderView(value);
+    const trigger = screen.getByRole("button", {
+      name: "別のテンプレートの詳細",
+    });
+    fireEvent.contextMenu(trigger);
+    await user.click(
+      screen.getByRole("menuitem", { name: "お気に入りに追加" }),
+    );
+    await waitFor(() =>
+      expect(value.api).toHaveBeenCalledWith("/api/templates/other", {
+        method: "PATCH",
+        body: JSON.stringify({ expectedVersion: 7, favorite: true }),
+      }),
+    );
+    fireEvent.contextMenu(trigger);
+    await user.click(screen.getByRole("menuitem", { name: "アーカイブ" }));
+    await waitFor(() =>
+      expect(value.api).toHaveBeenCalledWith("/api/templates/other", {
+        method: "DELETE",
+        body: JSON.stringify({ expectedVersion: 7 }),
+      }),
+    );
+  });
+
+  it("アーカイブした行のメニューでは復元を提示し、制作や編集を出さない", async () => {
+    const target = {
+      ...current,
+      archivedAt: "2026-10-02T03:00:00Z",
+      version: 3,
+    };
+    const value = context({ templates: [target] });
+    const user = userEvent.setup();
+    renderView(value);
+    await user.click(screen.getByRole("tab", { name: /アーカイブ/ }));
+    fireEvent.contextMenu(
+      screen.getByRole("button", { name: `${target.name}の詳細` }),
+    );
+    expect(
+      screen.queryByRole("menuitem", { name: "編集" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("menuitem", { name: "制作で使う" }),
+    ).not.toBeInTheDocument();
+    await user.click(
+      screen.getByRole("menuitem", { name: "アーカイブから復元" }),
+    );
+    await waitFor(() =>
+      expect(value.api).toHaveBeenCalledWith(
+        `/api/templates/${target.id}/restore`,
+        { method: "POST", body: JSON.stringify({ expectedVersion: 3 }) },
+      ),
+    );
+  });
+
   it("制作から保存する本文は独立した新規ダイアログで開く", async () => {
     const value = context();
     const view = renderView(value);
@@ -108,7 +196,9 @@ describe("テンプレートの管理", () => {
     const user = userEvent.setup();
     const api = vi.fn().mockResolvedValue(current);
     renderView(context({ api }));
-    await user.click(screen.getByRole("button", { name: "新しいテンプレート" }));
+    await user.click(
+      screen.getByRole("button", { name: "新しいテンプレート" }),
+    );
     const dialog = screen.getByRole("dialog");
     const name = within(dialog).getByLabelText(/名前/);
     const body = within(dialog).getByLabelText(/プロンプトの本文/);
@@ -135,7 +225,9 @@ describe("テンプレートの管理", () => {
   it("手動入力した名前を保持し、名前を空にしたら次の本文入力で自動入力を再開する", async () => {
     const user = userEvent.setup();
     renderView(context());
-    await user.click(screen.getByRole("button", { name: "新しいテンプレート" }));
+    await user.click(
+      screen.getByRole("button", { name: "新しいテンプレート" }),
+    );
     const dialog = screen.getByRole("dialog");
     const name = within(dialog).getByLabelText(/名前/);
     const body = within(dialog).getByLabelText(/プロンプトの本文/);
@@ -150,8 +242,12 @@ describe("テンプレートの管理", () => {
     await user.type(body, "を使う");
     expect(name).toHaveValue("別の名前");
 
-    await user.click(within(dialog).getByRole("button", { name: "キャンセル" }));
-    await user.click(screen.getByRole("button", { name: "新しいテンプレート" }));
+    await user.click(
+      within(dialog).getByRole("button", { name: "キャンセル" }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "新しいテンプレート" }),
+    );
     await user.type(screen.getByLabelText(/プロンプトの本文/), "新しい本文");
     expect(screen.getByLabelText(/名前/)).toHaveValue("新しい本文");
   });
@@ -163,8 +259,13 @@ describe("テンプレートの管理", () => {
     renderView(context({ templates: [template], api }));
     await user.click(screen.getByRole("button", { name: "編集" }));
     const dialog = screen.getByRole("dialog");
-    await user.type(within(dialog).getByLabelText(/プロンプトの本文/), "と自然光");
-    expect(within(dialog).getByLabelText(/名前/)).toHaveValue("白い背景と自然光");
+    await user.type(
+      within(dialog).getByLabelText(/プロンプトの本文/),
+      "と自然光",
+    );
+    expect(within(dialog).getByLabelText(/名前/)).toHaveValue(
+      "白い背景と自然光",
+    );
     await user.click(within(dialog).getByRole("button", { name: "保存" }));
     await waitFor(() => expect(api).toHaveBeenCalledOnce());
     expect(api.mock.calls[0][0]).toBe(`/api/templates/${template.id}`);

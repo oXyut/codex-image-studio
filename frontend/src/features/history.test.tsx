@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { StudioContext } from "@/lib/studio-context";
@@ -43,6 +43,26 @@ function studio(jobs: ImageSource[]): StudioContextValue {
 }
 
 describe("生成履歴", () => {
+  it("別のカードを右クリックしても詳細を開かず、そのカードを参照に追加する", async () => {
+    const first = job("最初の画像"),
+      target = job("右クリックした画像");
+    const context = studio([first, target]);
+    const user = userEvent.setup();
+    render(
+      <StudioContext.Provider value={context}>
+        <HistoryView />
+      </StudioContext.Provider>,
+    );
+    fireEvent.contextMenu(
+      screen.getByRole("button", { name: "右クリックした画像を選択" }),
+    );
+    expect(context.select).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("menuitem", { name: "参照に追加" }));
+    expect(context.addReference).toHaveBeenCalledWith(target);
+    expect(context.select).not.toHaveBeenCalled();
+  });
+
+
   it("エラーだけの件数を表示し、絞り込み中でも履歴全体の対象を確認して手動で削除する", async () => {
     const failed = job("失敗", { status: "failed", image: undefined });
     const otherFailed = job("別の失敗", { status: "failed", image: undefined });

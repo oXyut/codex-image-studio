@@ -50,6 +50,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { ContextMenu, ContextMenuItem } from "@/components/ui/context-menu";
 import {
   categories,
   categoryLabel,
@@ -249,6 +250,59 @@ function EmptyTemplates({
   );
 }
 
+function TemplateMenuItems({
+  template,
+  busy,
+  onEdit,
+  onUse,
+  onHistory,
+  onMutate,
+  contextMenu = false,
+}: {
+  template: Template;
+  busy: boolean;
+  onEdit: () => void;
+  onUse: () => void;
+  onHistory: () => void;
+  onMutate: (action: "favorite" | "archive" | "restore") => void;
+  contextMenu?: boolean;
+}) {
+  const Item = contextMenu ? ContextMenuItem : DropdownMenuItem;
+  return (
+    <>
+      {!template.archivedAt && (
+        <>
+          <Item onSelect={onEdit}>
+            <Pencil />
+            編集
+          </Item>
+          <Item onSelect={onUse}>
+            <ImagePlus />
+            制作で使う
+          </Item>
+        </>
+      )}
+      <Item onSelect={onHistory}>
+        <History />
+        履歴・差分
+      </Item>
+      <Item disabled={busy} onSelect={() => onMutate("favorite")}>
+        <Star
+          className={cn(template.favorite && "fill-amber-400 text-amber-600")}
+        />
+        {template.favorite ? "お気に入りから外す" : "お気に入りに追加"}
+      </Item>
+      <Item
+        disabled={busy}
+        onSelect={() => onMutate(template.archivedAt ? "restore" : "archive")}
+      >
+        {template.archivedAt ? <RotateCcw /> : <Archive />}
+        {template.archivedAt ? "アーカイブから復元" : "アーカイブ"}
+      </Item>
+    </>
+  );
+}
+
 export function TemplatesView({
   createRequest,
 }: { createRequest?: { key: number; body: string } } = {}) {
@@ -261,6 +315,7 @@ export function TemplatesView({
   const [editor, setEditor] = useState<{
     template?: Template;
     body?: string;
+    returnFocus?: HTMLElement | null;
   } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -472,133 +527,137 @@ export function TemplatesView({
                 </thead>
                 <tbody>
                   {filters.results.map((template) => (
-                    <tr
+                    <ContextMenu
                       key={template.id}
-                      className={cn(
-                        "border-b border-l-2 border-l-transparent transition-colors hover:bg-muted/50",
-                        selected?.id === template.id &&
-                          "border-l-foreground bg-muted/70",
-                      )}
+                      label={`${template.name}の操作`}
+                      content={
+                        <TemplateMenuItems
+                          contextMenu
+                          template={template}
+                          busy={busy}
+                          onEdit={() =>
+                            setEditor({
+                              template,
+                              returnFocus: returnFocus.current,
+                            })
+                          }
+                          onUse={() => useTemplate(template)}
+                          onHistory={() =>
+                            selectTemplate(template, undefined, "history")
+                          }
+                          onMutate={(action) => void mutate(template, action)}
+                        />
+                      }
                     >
-                      <td className="py-4">
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          className="size-9"
-                          disabled={busy}
-                          onClick={() => mutate(template, "favorite")}
-                          aria-label={`${template.name}のお気に入りを切り替え`}
-                          aria-pressed={template.favorite}
-                        >
-                          <Star
-                            className={cn(
-                              "size-4",
-                              template.favorite
-                                ? "fill-amber-400 text-amber-600"
-                                : "text-muted-foreground",
-                            )}
-                          />
-                        </Button>
-                      </td>
-                      <td className="py-4 pr-3">
-                        <button
-                          className="w-full rounded-md text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                          onClick={(event) =>
-                            selectTemplate(template, event.currentTarget)
-                          }
-                          aria-label={`${template.name}の詳細`}
-                          aria-current={
-                            selected?.id === template.id ? "true" : undefined
-                          }
-                        >
-                          <span className="block truncate text-base font-medium text-foreground">
-                            {template.name}
-                          </span>
-                          <span className="mt-1 block truncate text-sm text-muted-foreground">
-                            {template.body}
-                          </span>
-                          <span className="mt-2 inline-flex gap-2 md:hidden">
-                            <CategoryBadge category={template.category} />
-                            <span className="text-xs text-muted-foreground sm:hidden">
-                              v{versionOf(template)}
-                            </span>
-                          </span>
-                        </button>
-                      </td>
-                      <td className="hidden md:table-cell">
-                        <CategoryBadge category={template.category} />
-                      </td>
-                      <td className="hidden text-xs text-muted-foreground sm:table-cell">
-                        v{versionOf(template)}
-                      </td>
-                      <td className="hidden text-xs text-muted-foreground xl:table-cell">
-                        {new Date(template.updatedAt).toLocaleDateString(
-                          "ja-JP",
-                          { month: "numeric", day: "numeric" },
+                      <tr
+                        onContextMenu={(event) => {
+                          returnFocus.current =
+                            event.currentTarget.querySelector<HTMLButtonElement>(
+                              "[data-template-detail]",
+                            );
+                        }}
+                        className={cn(
+                          "border-b border-l-2 border-l-transparent transition-colors hover:bg-muted/50",
+                          selected?.id === template.id &&
+                            "border-l-foreground bg-muted/70",
                         )}
-                      </td>
-                      <td>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              className="size-8"
-                              onClick={(event) => {
-                                returnFocus.current = event.currentTarget;
-                              }}
-                              aria-label={`${template.name}の操作`}
-                            >
-                              <MoreHorizontal className="size-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            {!template.archivedAt && (
-                              <>
-                                <DropdownMenuItem
-                                  onSelect={() => setEditor({ template })}
-                                >
-                                  <Pencil className="size-4" />
-                                  編集
-                                </DropdownMenuItem>
-                                <DropdownMenuItem
-                                  onSelect={() => useTemplate(template)}
-                                >
-                                  <ImagePlus className="size-4" />
-                                  制作で使う
-                                </DropdownMenuItem>
-                              </>
-                            )}
-                            <DropdownMenuItem
-                              onSelect={() =>
-                                selectTemplate(template, undefined, "history")
-                              }
-                            >
-                              <History className="size-4" />
-                              履歴・差分
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              disabled={busy}
-                              onSelect={() =>
-                                mutate(
-                                  template,
-                                  template.archivedAt ? "restore" : "archive",
-                                )
-                              }
-                            >
-                              {template.archivedAt ? (
-                                <RotateCcw className="size-4" />
-                              ) : (
-                                <Archive className="size-4" />
+                      >
+                        <td className="py-4">
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="size-9"
+                            disabled={busy}
+                            onClick={() => mutate(template, "favorite")}
+                            aria-label={`${template.name}のお気に入りを切り替え`}
+                            aria-pressed={template.favorite}
+                          >
+                            <Star
+                              className={cn(
+                                "size-4",
+                                template.favorite
+                                  ? "fill-amber-400 text-amber-600"
+                                  : "text-muted-foreground",
                               )}
-                              {template.archivedAt
-                                ? "アーカイブから復元"
-                                : "アーカイブ"}
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </td>
-                    </tr>
+                            />
+                          </Button>
+                        </td>
+                        <td className="py-4 pr-3">
+                          <button
+                            data-template-detail
+                            className="w-full rounded-md text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            onClick={(event) =>
+                              selectTemplate(template, event.currentTarget)
+                            }
+                            aria-label={`${template.name}の詳細`}
+                            aria-current={
+                              selected?.id === template.id ? "true" : undefined
+                            }
+                          >
+                            <span className="block truncate text-base font-medium text-foreground">
+                              {template.name}
+                            </span>
+                            <span className="mt-1 block truncate text-sm text-muted-foreground">
+                              {template.body}
+                            </span>
+                            <span className="mt-2 inline-flex gap-2 md:hidden">
+                              <CategoryBadge category={template.category} />
+                              <span className="text-xs text-muted-foreground sm:hidden">
+                                v{versionOf(template)}
+                              </span>
+                            </span>
+                          </button>
+                        </td>
+                        <td className="hidden md:table-cell">
+                          <CategoryBadge category={template.category} />
+                        </td>
+                        <td className="hidden text-xs text-muted-foreground sm:table-cell">
+                          v{versionOf(template)}
+                        </td>
+                        <td className="hidden text-xs text-muted-foreground xl:table-cell">
+                          {new Date(template.updatedAt).toLocaleDateString(
+                            "ja-JP",
+                            { month: "numeric", day: "numeric" },
+                          )}
+                        </td>
+                        <td>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                className="size-8"
+                                onClick={(event) => {
+                                  returnFocus.current = event.currentTarget;
+                                }}
+                                aria-label={`${template.name}の操作`}
+                              >
+                                <MoreHorizontal className="size-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <TemplateMenuItems
+                                template={template}
+                                busy={busy}
+                                onEdit={() =>
+                                  setEditor({
+                                    template,
+                                    returnFocus: returnFocus.current,
+                                  })
+                                }
+                                onUse={() => useTemplate(template)}
+                                onHistory={() =>
+                                  selectTemplate(template, undefined, "history")
+                                }
+                                onMutate={(action) =>
+                                  void mutate(template, action)
+                                }
+                              />
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </td>
+                      </tr>
+                    </ContextMenu>
                   ))}
                 </tbody>
               </table>
@@ -1201,7 +1260,11 @@ function TemplateEditor({
   onClose,
   onSaved,
 }: {
-  editor: { template?: Template; body?: string } | null;
+  editor: {
+    template?: Template;
+    body?: string;
+    returnFocus?: HTMLElement | null;
+  } | null;
   onClose: () => void;
   onSaved: (template: Template) => void;
 }) {
@@ -1317,7 +1380,8 @@ function TemplateEditor({
       <DialogContent
         className="max-h-[90dvh] overflow-y-auto sm:max-w-xl"
         onOpenAutoFocus={() => {
-          returnFocus.current = document.activeElement as HTMLElement;
+          returnFocus.current =
+            editor?.returnFocus || (document.activeElement as HTMLElement);
         }}
         onCloseAutoFocus={(event) => {
           event.preventDefault();
