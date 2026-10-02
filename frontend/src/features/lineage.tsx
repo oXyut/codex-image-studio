@@ -26,6 +26,8 @@ import {
   X,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { ImageContextMenu } from "@/components/image-actions";
+import { openContextMenuWithKeyboard } from "@/components/ui/context-menu";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -137,81 +139,83 @@ function ImageNode({ data }: NodeProps<FlowImageNode>) {
   const pending =
     value.job.status === "running" || value.job.status === "queued";
   return (
-    <div
-      className={cn(
-        "relative h-[200px] w-[184px] rounded-xl border bg-white p-2 shadow-sm transition-colors",
-        selected
-          ? "border-zinc-900 ring-2 ring-zinc-900/10"
-          : "border-zinc-200 hover:border-zinc-400",
-        ancestor && "bg-zinc-50",
-      )}
-      title={`${title}\n${status} · ${dateLabel(value.createdAt)}${ancestor ? "\n絞り込み対象の元画像" : ""}`}
-    >
-      <Handle
-        type="target"
-        position={Position.Left}
-        className="!size-1 !border-0 !bg-zinc-500 !opacity-0"
-      />
-      <div className="relative flex h-32 items-center justify-center overflow-hidden rounded-lg bg-zinc-100">
-        {value.job.image?.url ? (
-          <img
-            src={value.job.image.url}
-            alt=""
-            className="h-full w-full object-cover"
-            loading="lazy"
-            draggable={false}
-          />
-        ) : (
-          <div className="flex flex-col items-center gap-2 text-zinc-500">
-            {pending ? (
-              <LoaderCircle className="size-7 animate-spin" />
-            ) : (
-              <ImageIcon className="size-7" />
-            )}
-            <span className="text-sm">{status}</span>
-          </div>
+    <ImageContextMenu source={value.job}>
+      <div
+        className={cn(
+          "relative h-[200px] w-[184px] rounded-xl border bg-white p-2 shadow-sm transition-colors",
+          selected
+            ? "border-zinc-900 ring-2 ring-zinc-900/10"
+            : "border-zinc-200 hover:border-zinc-400",
+          ancestor && "bg-zinc-50",
         )}
-        {selected && (
-          <span className="absolute right-2 top-2 flex size-6 items-center justify-center rounded-full bg-zinc-900 text-white ring-2 ring-white">
-            <Check className="size-4" />
-          </span>
-        )}
-        {value.kind === "upload" && (
-          <span
-            className="absolute bottom-2 left-2 rounded-md bg-white/95 p-1 text-zinc-700"
-            aria-hidden="true"
-          >
-            <Upload className="size-4" />
-          </span>
-        )}
-      </div>
-      <p className="mt-2 truncate text-sm font-semibold leading-5 text-zinc-900">
-        {title}
-      </p>
-      <p className="mt-1 flex items-center gap-1.5 text-sm leading-5 text-zinc-500">
-        <span
-          className={cn(
-            "size-1.5 shrink-0 rounded-full",
-            value.job.status === "failed"
-              ? "bg-red-500"
-              : value.job.status === "succeeded" || value.kind === "upload"
-                ? "bg-emerald-500"
-                : "bg-zinc-400",
-          )}
+        title={`${title}\n${status} · ${dateLabel(value.createdAt)}${ancestor ? "\n絞り込み対象の元画像" : ""}`}
+      >
+        <Handle
+          type="target"
+          position={Position.Left}
+          className="!size-1 !border-0 !bg-zinc-500 !opacity-0"
         />
-        {status}
-        {value.job.batch && (
-          <span>
-            · {value.job.batch.index}/{value.job.batch.count}
-          </span>
-        )}
-      </p>
-      <Handle
-        type="source"
-        position={Position.Right}
-        className="!size-1 !border-0 !bg-zinc-500 !opacity-0"
-      />
-    </div>
+        <div className="relative flex h-32 items-center justify-center overflow-hidden rounded-lg bg-zinc-100">
+          {value.job.image?.url ? (
+            <img
+              src={value.job.image.url}
+              alt=""
+              className="h-full w-full object-cover"
+              loading="lazy"
+              draggable={false}
+            />
+          ) : (
+            <div className="flex flex-col items-center gap-2 text-zinc-500">
+              {pending ? (
+                <LoaderCircle className="size-7 animate-spin" />
+              ) : (
+                <ImageIcon className="size-7" />
+              )}
+              <span className="text-sm">{status}</span>
+            </div>
+          )}
+          {selected && (
+            <span className="absolute right-2 top-2 flex size-6 items-center justify-center rounded-full bg-zinc-900 text-white ring-2 ring-white">
+              <Check className="size-4" />
+            </span>
+          )}
+          {value.kind === "upload" && (
+            <span
+              className="absolute bottom-2 left-2 rounded-md bg-white/95 p-1 text-zinc-700"
+              aria-hidden="true"
+            >
+              <Upload className="size-4" />
+            </span>
+          )}
+        </div>
+        <p className="mt-2 truncate text-sm font-semibold leading-5 text-zinc-900">
+          {title}
+        </p>
+        <p className="mt-1 flex items-center gap-1.5 text-sm leading-5 text-zinc-500">
+          <span
+            className={cn(
+              "size-1.5 shrink-0 rounded-full",
+              value.job.status === "failed"
+                ? "bg-red-500"
+                : value.job.status === "succeeded" || value.kind === "upload"
+                  ? "bg-emerald-500"
+                  : "bg-zinc-400",
+            )}
+          />
+          {status}
+          {value.job.batch && (
+            <span>
+              · {value.job.batch.index}/{value.job.batch.count}
+            </span>
+          )}
+        </p>
+        <Handle
+          type="source"
+          position={Position.Right}
+          className="!size-1 !border-0 !bg-zinc-500 !opacity-0"
+        />
+      </div>
+    </ImageContextMenu>
   );
 }
 
@@ -433,6 +437,10 @@ export function LineageView() {
     const node = (event.target as HTMLElement).closest<HTMLElement>(
       ".react-flow__node-image",
     );
+    const menuTrigger = node?.querySelector<HTMLElement>(
+      "[data-slot=context-menu-trigger]",
+    );
+    if (menuTrigger && openContextMenuWithKeyboard(event, menuTrigger)) return;
     if (node && (event.key === "Enter" || event.key === " ")) {
       event.preventDefault();
       const source = graph.nodeMap.get(node.dataset.id || "")?.job;

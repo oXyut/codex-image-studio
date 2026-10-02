@@ -62,7 +62,7 @@ import {
 } from "@/components/ui/popover";
 import { TemplatePicker } from "./templates";
 import { ReferencePicker } from "@/components/reference-picker";
-import { ImageActions } from "@/components/image-actions";
+import { ImageActions, ImageContextMenu } from "@/components/image-actions";
 const examples = [
   "朝のやわらかな光が差し込む、静かな森。木々の間に薄い霧が漂う。自然な写真の質感。",
   "白い背景に置いた、シンプルなガラスの香水ボトル。やわらかな影、スタジオ撮影。",
@@ -617,96 +617,102 @@ export function CreateView({
           <div className="flex min-h-0 flex-1 flex-col items-center justify-start p-5 lg:p-7">
             {source ? (
               <>
-                <div className="relative flex min-h-0 aspect-[3/2] w-full max-w-4xl items-center justify-center overflow-hidden rounded-lg border bg-white shadow-sm">
-                  {source.image ? (
-                    <>
-                      <img
-                        src={source.image.url}
-                        alt={imageTitle(source)}
-                        className={`max-h-[calc(100dvh-360px)] min-h-40 max-w-full object-contain ${source.transparent ? "checkerboard" : ""}`}
-                      />
-                      <Button
-                        variant="secondary"
-                        size="icon"
-                        aria-label="生成画像を拡大"
-                        className="absolute right-3 top-3"
-                        onClick={() => studio.openPreview(source)}
-                      >
-                        <Maximize2 />
-                      </Button>
-                    </>
-                  ) : (
-                    <div role="status" className="max-w-md p-7 text-center">
-                      {["queued", "running"].includes(source.status) ? (
-                        <>
-                          <Loader2 className="mx-auto mb-4 size-8 animate-spin text-muted-foreground" />
-                          <p className="text-lg font-medium">
-                            {statusLabels[source.status]}
-                          </p>
-                          <p className="mt-2 text-sm text-muted-foreground">
-                            生成中もプロンプトを編集したり、ほかの画面を確認できます。
-                          </p>
-                          <Button
-                            variant="outline"
-                            className="mt-5"
-                            onClick={() =>
-                              void studio.run(() => studio.cancel(source))
-                            }
-                          >
-                            生成を停止
-                          </Button>
-                        </>
-                      ) : (
-                        <>
-                          <p className="font-medium">
-                            {statusLabels[source.status]}
-                          </p>
-                          <p className="mt-3 text-sm text-destructive">
-                            {source.status === "cancelled"
-                              ? "生成をキャンセルしました。入力は保持されています。"
-                              : errorMessage(source)}
-                          </p>
-                          {source.error != null &&
-                            typeof source.error === "object" &&
-                            typeof source.error.advice === "string" && (
-                              <p className="mt-2 text-sm text-muted-foreground">
-                                {source.error.advice}
-                              </p>
-                            )}
-                          {(source.errorDetails ||
-                            (source.error != null &&
+                <ImageContextMenu source={source}>
+                  <div
+                    tabIndex={0}
+                    aria-label="生成結果の画像"
+                    className="relative flex min-h-0 aspect-[3/2] w-full max-w-4xl items-center justify-center overflow-hidden rounded-lg border bg-white shadow-sm"
+                  >
+                    {source.image ? (
+                      <>
+                        <img
+                          src={source.image.url}
+                          alt={imageTitle(source)}
+                          className={`max-h-[calc(100dvh-360px)] min-h-40 max-w-full object-contain ${source.transparent ? "checkerboard" : ""}`}
+                        />
+                        <Button
+                          variant="secondary"
+                          size="icon"
+                          aria-label="生成画像を拡大"
+                          className="absolute right-3 top-3"
+                          onClick={() => studio.openPreview(source)}
+                        >
+                          <Maximize2 />
+                        </Button>
+                      </>
+                    ) : (
+                      <div role="status" className="max-w-md p-7 text-center">
+                        {["queued", "running"].includes(source.status) ? (
+                          <>
+                            <Loader2 className="mx-auto mb-4 size-8 animate-spin text-muted-foreground" />
+                            <p className="text-lg font-medium">
+                              {statusLabels[source.status]}
+                            </p>
+                            <p className="mt-2 text-sm text-muted-foreground">
+                              生成中もプロンプトを編集したり、ほかの画面を確認できます。
+                            </p>
+                            <Button
+                              variant="outline"
+                              className="mt-5"
+                              onClick={() =>
+                                void studio.run(() => studio.cancel(source))
+                              }
+                            >
+                              生成を停止
+                            </Button>
+                          </>
+                        ) : (
+                          <>
+                            <p className="font-medium">
+                              {statusLabels[source.status]}
+                            </p>
+                            <p className="mt-3 text-sm text-destructive">
+                              {source.status === "cancelled"
+                                ? "生成をキャンセルしました。入力は保持されています。"
+                                : errorMessage(source)}
+                            </p>
+                            {source.error != null &&
                               typeof source.error === "object" &&
-                              source.error.details)) && (
-                            <details className="mt-3 rounded-lg border p-3 text-left text-xs">
-                              <summary className="cursor-pointer font-medium">
-                                エラーの詳細
-                              </summary>
-                              <pre className="mt-2 whitespace-pre-wrap break-words">
-                                {source.error != null &&
-                                typeof source.error === "object"
-                                  ? source.error.code
-                                  : ""}
-                                {"\n"}
-                                {source.errorDetails ||
-                                  (source.error != null &&
+                              typeof source.error.advice === "string" && (
+                                <p className="mt-2 text-sm text-muted-foreground">
+                                  {source.error.advice}
+                                </p>
+                              )}
+                            {(source.errorDetails ||
+                              (source.error != null &&
+                                typeof source.error === "object" &&
+                                source.error.details)) && (
+                              <details className="mt-3 rounded-lg border p-3 text-left text-xs">
+                                <summary className="cursor-pointer font-medium">
+                                  エラーの詳細
+                                </summary>
+                                <pre className="mt-2 whitespace-pre-wrap break-words">
+                                  {source.error != null &&
                                   typeof source.error === "object"
-                                    ? source.error.details
-                                    : "")}
-                              </pre>
-                            </details>
-                          )}
-                          <Button
-                            className="mt-4"
-                            onClick={() => studio.replaceFromSource(source)}
-                          >
-                            内容を編集して再試行
-                          </Button>
-                          <ImageActions source={source} />
-                        </>
-                      )}
-                    </div>
-                  )}
-                </div>
+                                    ? source.error.code
+                                    : ""}
+                                  {"\n"}
+                                  {source.errorDetails ||
+                                    (source.error != null &&
+                                    typeof source.error === "object"
+                                      ? source.error.details
+                                      : "")}
+                                </pre>
+                              </details>
+                            )}
+                            <Button
+                              className="mt-4"
+                              onClick={() => studio.replaceFromSource(source)}
+                            >
+                              内容を編集して再試行
+                            </Button>
+                            <ImageActions source={source} />
+                          </>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </ImageContextMenu>
                 <div className="result-meta mt-4 flex w-full max-w-4xl flex-wrap items-center justify-between gap-3">
                   <p className="min-w-0 flex-1 truncate text-sm text-muted-foreground">
                     {canvasSizeLabel(source.size, { full: true })} ·{" "}
@@ -754,29 +760,31 @@ export function CreateView({
                   aria-label="同時に生成した画像"
                 >
                   {siblings.map((item, index) => (
-                    <button
-                      type="button"
-                      key={item.id}
-                      onClick={() => studio.select(item.id)}
-                      aria-pressed={source.id === item.id}
-                      aria-label={`${item.batch?.index || index + 1}枚目の生成結果 ${statusLabels[item.status]}`}
-                      className={`relative aspect-[3/2] w-full overflow-hidden rounded-lg border-2 bg-white ${source.id === item.id ? "border-primary" : "border-transparent"}`}
-                    >
-                      {item.image ? (
-                        <img
-                          src={item.image.url}
-                          alt=""
-                          className="size-full object-cover"
-                        />
-                      ) : (
-                        <span className="text-xs text-muted-foreground">
-                          {statusLabels[item.status]}
+                    <ImageContextMenu key={item.id} source={item}>
+                      <button
+                        type="button"
+                        key={item.id}
+                        onClick={() => studio.select(item.id)}
+                        aria-pressed={source.id === item.id}
+                        aria-label={`${item.batch?.index || index + 1}枚目の生成結果 ${statusLabels[item.status]}`}
+                        className={`relative aspect-[3/2] w-full overflow-hidden rounded-lg border-2 bg-white ${source.id === item.id ? "border-primary" : "border-transparent"}`}
+                      >
+                        {item.image ? (
+                          <img
+                            src={item.image.url}
+                            alt=""
+                            className="size-full object-cover"
+                          />
+                        ) : (
+                          <span className="text-xs text-muted-foreground">
+                            {statusLabels[item.status]}
+                          </span>
+                        )}
+                        <span className="absolute bottom-1 left-1 rounded bg-white/90 px-1.5 text-[10px]">
+                          {item.batch?.index || index + 1}
                         </span>
-                      )}
-                      <span className="absolute bottom-1 left-1 rounded bg-white/90 px-1.5 text-[10px]">
-                        {item.batch?.index || index + 1}
-                      </span>
-                    </button>
+                      </button>
+                    </ImageContextMenu>
                   ))}
                 </div>
               </>

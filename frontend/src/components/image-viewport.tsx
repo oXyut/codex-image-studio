@@ -10,6 +10,7 @@ import { Maximize, Minus, Plus } from "lucide-react";
 import type { ImageSource } from "@/lib/types";
 import { imageTitle } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { ImageContextMenu } from "./image-actions";
 import { Button } from "./ui/button";
 
 type Size = { width: number; height: number };
@@ -143,154 +144,163 @@ export function ImageViewport({
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-      <div
-        ref={viewportRef}
-        data-image-viewport={interactive ? "interactive" : "fit"}
-        role="button"
-        tabIndex={0}
-        aria-label={
-          interactive ? "画像の表示位置を操作" : "画像をクリックして拡大・移動"
-        }
-        aria-describedby={instructionsId}
-        title={
-          interactive
-            ? "ドラッグで移動 · スクロールで拡大・縮小"
-            : "画像をクリックして拡大・移動"
-        }
-        aria-pressed={interactive}
-        className={cn(
-          "relative min-h-0 flex-1 touch-none overflow-hidden bg-muted/50 select-none outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
-          (source.transparent || source.kind === "upload") && "checkerboard",
-          interactive
-            ? dragging
-              ? "!cursor-grabbing"
-              : "!cursor-grab"
-            : "!cursor-zoom-in",
-        )}
-        onClick={(event) => {
-          if (moved.current) {
-            moved.current = false;
-            return;
+      <ImageContextMenu source={source}>
+        <div
+          ref={viewportRef}
+          data-image-viewport={interactive ? "interactive" : "fit"}
+          role="button"
+          tabIndex={0}
+          aria-label={
+            interactive
+              ? "画像の表示位置を操作"
+              : "画像をクリックして拡大・移動"
           }
-          if (interactive || !ready) return;
-          const bounds = event.currentTarget.getBoundingClientRect();
-          setInteractive(true);
-          setTransform((value) =>
-            zoomAt(
-              value,
-              2,
-              event.clientX - bounds.left - bounds.width / 2,
-              event.clientY - bounds.top - bounds.height / 2,
-            ),
-          );
-        }}
-        onPointerDown={(event) => {
-          moved.current = false;
-          if (!interactive || !ready || event.button !== 0 || drag.current)
-            return;
-          event.currentTarget.focus();
-          drag.current = {
-            id: event.pointerId,
-            x: event.clientX,
-            y: event.clientY,
-            start: transform,
-            moved: false,
-          };
-          event.currentTarget.setPointerCapture(event.pointerId);
-        }}
-        onPointerMove={(event) => {
-          const current = drag.current;
-          if (!current || current.id !== event.pointerId) return;
-          const dx = event.clientX - current.x,
-            dy = event.clientY - current.y;
-          if (Math.hypot(dx, dy) > 4) current.moved = true;
-          if (!current.moved) return;
-          setDragging(true);
-          setTransform(
-            constrain({
-              ...current.start,
-              x: current.start.x + dx,
-              y: current.start.y + dy,
-            }),
-          );
-        }}
-        onPointerUp={finishDrag}
-        onPointerCancel={finishDrag}
-        onLostPointerCapture={() => {
-          drag.current = null;
-          setDragging(false);
-        }}
-        onKeyDown={(event) => {
-          if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey)
-            return;
-          if (["Enter", " ", "+", "=", "-", "0"].includes(event.key)) {
-            event.preventDefault();
-            event.stopPropagation();
-            if (!ready) return;
-            if (event.key === "0") reset();
-            else
-              changeZoom(
-                event.key === "-"
-                  ? transform.zoom / 1.25
-                  : transform.zoom * (interactive ? 1.25 : 2),
-              );
-          } else if (
-            interactive &&
-            ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(
-              event.key,
-            )
-          ) {
-            event.preventDefault();
-            event.stopPropagation();
-            const movement: Record<string, [number, number]> = {
-              ArrowLeft: [60, 0],
-              ArrowRight: [-60, 0],
-              ArrowUp: [0, 60],
-              ArrowDown: [0, -60],
-            };
-            const [dx, dy] = movement[event.key];
+          aria-describedby={instructionsId}
+          title={
+            interactive
+              ? "ドラッグで移動 · スクロールで拡大・縮小"
+              : "画像をクリックして拡大・移動"
+          }
+          aria-pressed={interactive}
+          className={cn(
+            "relative min-h-0 flex-1 touch-none overflow-hidden bg-muted/50 select-none outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+            (source.transparent || source.kind === "upload") && "checkerboard",
+            interactive
+              ? dragging
+                ? "!cursor-grabbing"
+                : "!cursor-grab"
+              : "!cursor-zoom-in",
+          )}
+          onClick={(event) => {
+            if (moved.current) {
+              moved.current = false;
+              return;
+            }
+            if (interactive || !ready) return;
+            const bounds = event.currentTarget.getBoundingClientRect();
+            setInteractive(true);
             setTransform((value) =>
-              constrain({ ...value, x: value.x + dx, y: value.y + dy }),
+              zoomAt(
+                value,
+                2,
+                event.clientX - bounds.left - bounds.width / 2,
+                event.clientY - bounds.top - bounds.height / 2,
+              ),
             );
-          }
-        }}
-      >
-        <img
-          src={source.image?.url}
-          alt={imageTitle(source)}
-          draggable={false}
-          onLoad={(event) => {
-            setNativeSize({
-              width: event.currentTarget.naturalWidth,
-              height: event.currentTarget.naturalHeight,
-            });
-            setLoadError(false);
           }}
-          onError={() => setLoadError(true)}
-          className={
-            ready
-              ? "pointer-events-none absolute left-1/2 top-1/2 max-w-none object-contain"
-              : "pointer-events-none absolute inset-0 size-full object-contain p-4"
-          }
-          style={
-            ready
-              ? {
-                  width: fit.width,
-                  height: fit.height,
-                  transform: `translate(-50%, -50%) translate(${transform.x}px, ${transform.y}px) scale(${transform.zoom})`,
-                }
-              : undefined
-          }
-        />
-        {loadError && (
-          <p
-            role="alert"
-            className="absolute inset-0 flex items-center justify-center bg-background/90 p-5"
-          >
-            画像を読み込めませんでした。
-          </p>
-        )}
-      </div>
+          onPointerDown={(event) => {
+            moved.current = false;
+            if (!interactive || !ready || event.button !== 0 || drag.current)
+              return;
+            event.currentTarget.focus();
+            drag.current = {
+              id: event.pointerId,
+              x: event.clientX,
+              y: event.clientY,
+              start: transform,
+              moved: false,
+            };
+            event.currentTarget.setPointerCapture(event.pointerId);
+          }}
+          onPointerMove={(event) => {
+            const current = drag.current;
+            if (!current || current.id !== event.pointerId) return;
+            const dx = event.clientX - current.x,
+              dy = event.clientY - current.y;
+            if (Math.hypot(dx, dy) > 4) current.moved = true;
+            if (!current.moved) return;
+            setDragging(true);
+            setTransform(
+              constrain({
+                ...current.start,
+                x: current.start.x + dx,
+                y: current.start.y + dy,
+              }),
+            );
+          }}
+          onPointerUp={finishDrag}
+          onPointerCancel={finishDrag}
+          onLostPointerCapture={() => {
+            drag.current = null;
+            setDragging(false);
+          }}
+          onKeyDown={(event) => {
+            if (
+              event.altKey ||
+              event.ctrlKey ||
+              event.metaKey ||
+              event.shiftKey
+            )
+              return;
+            if (["Enter", " ", "+", "=", "-", "0"].includes(event.key)) {
+              event.preventDefault();
+              event.stopPropagation();
+              if (!ready) return;
+              if (event.key === "0") reset();
+              else
+                changeZoom(
+                  event.key === "-"
+                    ? transform.zoom / 1.25
+                    : transform.zoom * (interactive ? 1.25 : 2),
+                );
+            } else if (
+              interactive &&
+              ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(
+                event.key,
+              )
+            ) {
+              event.preventDefault();
+              event.stopPropagation();
+              const movement: Record<string, [number, number]> = {
+                ArrowLeft: [60, 0],
+                ArrowRight: [-60, 0],
+                ArrowUp: [0, 60],
+                ArrowDown: [0, -60],
+              };
+              const [dx, dy] = movement[event.key];
+              setTransform((value) =>
+                constrain({ ...value, x: value.x + dx, y: value.y + dy }),
+              );
+            }
+          }}
+        >
+          <img
+            src={source.image?.url}
+            alt={imageTitle(source)}
+            draggable={false}
+            onLoad={(event) => {
+              setNativeSize({
+                width: event.currentTarget.naturalWidth,
+                height: event.currentTarget.naturalHeight,
+              });
+              setLoadError(false);
+            }}
+            onError={() => setLoadError(true)}
+            className={
+              ready
+                ? "pointer-events-none absolute left-1/2 top-1/2 max-w-none object-contain"
+                : "pointer-events-none absolute inset-0 size-full object-contain p-4"
+            }
+            style={
+              ready
+                ? {
+                    width: fit.width,
+                    height: fit.height,
+                    transform: `translate(-50%, -50%) translate(${transform.x}px, ${transform.y}px) scale(${transform.zoom})`,
+                  }
+                : undefined
+            }
+          />
+          {loadError && (
+            <p
+              role="alert"
+              className="absolute inset-0 flex items-center justify-center bg-background/90 p-5"
+            >
+              画像を読み込めませんでした。
+            </p>
+          )}
+        </div>
+      </ImageContextMenu>
       <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t bg-background px-3 py-2">
         <div>
           {actions}

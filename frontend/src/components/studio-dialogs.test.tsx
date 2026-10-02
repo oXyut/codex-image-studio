@@ -71,6 +71,23 @@ function Preview({
 }
 
 describe("拡大画像プレビュー", () => {
+  it("画像の右クリック中は矢印キーやEscapeでプレビューを切り替えたり閉じたりしない", async () => {
+    const user = userEvent.setup();
+    const onPreview = vi.fn();
+    render(<Preview onPreview={onPreview} />);
+    fireEvent.contextMenu(screen.getByRole("img", { name: "二枚目" }));
+    expect(screen.getByRole("menu", { name: "二枚目の操作" })).toBeVisible();
+    await user.keyboard("{ArrowDown}{ArrowRight}{ArrowLeft}{Escape}");
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(onPreview).not.toHaveBeenCalled();
+    await user.keyboard("{ArrowRight}");
+    expect(
+      screen.getByRole("img", { name: "アップロード" }),
+    ).toBeInTheDocument();
+  });
+
+
   it("画像操作中の矢印は位置を動かし、全体表示に戻すと画像を切り替える", async () => {
     const user = userEvent.setup();
     const onPreview = vi.fn();

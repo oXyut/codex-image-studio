@@ -5,6 +5,8 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { type ComponentType } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Edge, Node, ReactFlowInstance } from "@xyflow/react";
 import { StudioContext } from "@/lib/studio-context";
@@ -31,12 +33,15 @@ vi.mock("@xyflow/react", async () => {
   return {
     ...actual,
     Background: () => null,
+    Handle: () => null,
     ReactFlow: ({
       nodes,
       edges,
       onInit,
       onNodeClick,
+      nodeTypes,
     }: {
+      nodeTypes: Record<string, ComponentType<any>>;
       nodes: Node[];
       edges: Edge[];
       onInit: (flow: ReactFlowInstance) => void;
@@ -50,15 +55,20 @@ vi.mock("@xyflow/react", async () => {
           {nodes
             .filter((node) => node.type === "image")
             .map((node) => (
-              <button
+              <div
+                role="button"
+                tabIndex={0}
                 className="react-flow__node-image"
                 data-id={node.id}
                 key={node.id}
                 aria-label={node.ariaLabel}
                 onClick={(event) => onNodeClick(event, node)}
               >
-                {node.id}
-              </button>
+                {(() => {
+                  const Component = nodeTypes.image;
+                  return <Component data={node.data} />;
+                })()}
+              </div>
             ))}
         </div>
       );
@@ -118,6 +128,8 @@ function context(overrides: Partial<StudioContextValue> = {}) {
     setGraphBatchId: vi.fn(),
     openPreview: vi.fn(),
     favoritePendingIds: [],
+    draft: { count: 1 },
+    replaceFromSource: vi.fn(),
     ...overrides,
   } as unknown as StudioContextValue;
 }
@@ -145,6 +157,31 @@ afterEach(() => {
 });
 
 describe("LineageView", () => {
+  it("ノードにフォーカスしてShift+F10で開き、選択を変えずにそのノードの入力を編集する", async () => {
+    const studio = context({ selectedId: source.id });
+    const user = userEvent.setup();
+    render(view(studio));
+    const node = screen.getByRole("button", { name: /Target Cabin、完成/ });
+    node.focus();
+    await user.keyboard("{Shift>}{F10}{/Shift}");
+    expect(
+      screen.getByRole("menu", { name: "Target Cabinの操作" }),
+    ).toBeInTheDocument();
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    expect(studio.select).not.toHaveBeenCalled();
+    fireEvent.contextMenu(
+      node.querySelector("[data-slot=context-menu-trigger]")!,
+    );
+    await user.click(
+      screen.getByRole("menuitem", { name: "元の入力に置き換えて編集" }),
+    );
+    expect(studio.replaceFromSource).toHaveBeenCalledWith(
+      expect.objectContaining({ id: child.id }),
+    );
+    expect(studio.select).not.toHaveBeenCalled();
+  });
+
   it("検索中も全ての参照元・入力元とアップロード起点を残す", () => {
     render(view(context()));
     fireEvent.change(screen.getByRole("textbox", { name: "系統図を検索" }), {
