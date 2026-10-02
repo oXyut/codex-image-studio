@@ -25,6 +25,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ImageFavoriteButton } from "@/components/image-actions";
+import { FailedJobsDeleteDialog } from "@/components/failed-jobs-delete-dialog";
 import { useStudio } from "@/lib/studio-context";
 import {
   dateLabel,
@@ -157,6 +158,8 @@ export function HistoryView() {
   const [favoriteOnly, setFavoriteOnly] = useState(false);
   const [batch, setBatch] = useState("all");
   const [moreFilters, setMoreFilters] = useState(false);
+  const [deleteFailedOpen, setDeleteFailedOpen] = useState(false);
+  const failedCount = studio.jobs.filter((job) => job.status === "failed").length;
   const batches = useMemo(() => {
     const map = new Map<string, ImageSource>();
     studio.jobs.forEach((job) => {
@@ -222,10 +225,20 @@ export function HistoryView() {
               {studio.jobs.length}枚
             </span>
           </div>
-          <Button variant="ghost" onClick={studio.openTrash}>
-            <Trash2 className="size-4" />
-            ゴミ箱
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant="outline"
+              disabled={studio.loading || failedCount === 0}
+              onClick={() => setDeleteFailedOpen(true)}
+            >
+              <Trash2 className="size-4" />
+              エラー画像を一括削除（{failedCount}件）
+            </Button>
+            <Button variant="ghost" onClick={studio.openTrash}>
+              <Trash2 className="size-4" />
+              ゴミ箱
+            </Button>
+          </div>
         </header>
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-5 md:px-8">
           <div className="mb-7 space-y-3">
@@ -450,6 +463,10 @@ export function HistoryView() {
           )}
         </div>
       </div>
+      <FailedJobsDeleteDialog
+        open={deleteFailedOpen}
+        onOpenChange={setDeleteFailedOpen}
+      />
     </div>
   );
 }

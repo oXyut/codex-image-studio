@@ -249,7 +249,7 @@ export function StudioDialogs({
           <DialogHeader>
             <DialogTitle>ゴミ箱</DialogTitle>
             <DialogDescription>
-              削除した起点と下流の画像を、グループごとに復元できます。
+              削除した画像を、グループごとに復元できます。
             </DialogDescription>
           </DialogHeader>
           <Button

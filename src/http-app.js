@@ -29,6 +29,7 @@ export function createApp({ store, manager, adapter, templates, lineage, uploads
       if (request.method === 'GET' && pathname === '/api/session') return json(response, 200, { token });
       if (request.method === 'GET' && pathname === '/api/health') return json(response, 200, await adapter.health(url.searchParams.get('refresh') === '1'));
       if (request.method === 'GET' && pathname === '/api/jobs') return json(response, 200, { jobs: store.list().filter(job => !lineage || lineage.isVisible(job.id)).map(job => publicJob(job, lineage, store)) });
+      if (request.method === 'GET' && pathname === '/api/jobs/failed/deletion-preview' && lineage) return json(response, 200, lineage.failedDeletionPreview(store));
       if (request.method === 'GET' && pathname === '/api/lineage' && lineage) return json(response, 200, { ...lineage.activeSnapshot(), ...(uploads ? { uploads: uploads.list().filter(upload => lineage.isVisible(upload.id)).map(upload => publicUpload(upload, lineage)) } : {}) });
       if (request.method === 'GET' && pathname === '/api/uploads' && uploads) return json(response, 200, { uploads: uploads.list().filter(upload => !lineage || lineage.isVisible(upload.id)).map(upload => publicUpload(upload, lineage)) });
       if (request.method === 'GET' && pathname === '/api/trash' && lineage) return json(response, 200, { deletions: lineage.trash() });
@@ -43,6 +44,11 @@ export function createApp({ store, manager, adapter, templates, lineage, uploads
         if (supplied.length !== expected.length || !timingSafeEqual(supplied, expected)) throw new AppError('ページを再読み込みしてからお試しください。', 'INVALID_SESSION', 403);
       }
       const deletionRoute = pathname.match(/^\/api\/lineage\/nodes\/([a-f0-9-]{36})$/);
+      if (request.method === 'DELETE' && pathname === '/api/jobs/failed' && lineage) {
+        const input = await readJson(request);
+        if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).length !== 1 || !Object.hasOwn(input, 'planToken')) throw new AppError('確認した削除対象を指定してください。', 'INVALID_DELETE_PLAN', 400);
+        return json(response, 200, await lineage.softDeleteFailed(store, input.planToken));
+      }
       if (request.method === 'DELETE' && deletionRoute && lineage) {
         const input = await readJson(request);
         if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).length !== 1 || !Object.hasOwn(input, 'planToken')) throw new AppError('確認した削除対象を指定してください。', 'INVALID_DELETE_PLAN', 400);

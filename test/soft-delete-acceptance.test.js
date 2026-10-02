@@ -32,7 +32,7 @@ async function waitFor(predicate) {
 
 async function setup(t, { concurrency = 5 } = {}) {
   const directory = await mkdtemp(join(tmpdir(), 'studio-soft-delete-acceptance-'));
-  const app = { directory, calls: [], pending: new Map() };
+  const app = { directory, calls: [], pending: new Map(), failures: new Set() };
   async function start() {
     app.store = new JobStore(join(directory, 'jobs')); await app.store.initialize();
     app.uploads = new UploadStore(join(directory, 'uploads')); await app.uploads.initialize();
@@ -40,6 +40,7 @@ async function setup(t, { concurrency = 5 } = {}) {
     app.lineage = new LineageStore(join(directory, 'lineage.json')); await app.lineage.initialize(app.store, app.uploads);
     const adapter = { health: async () => ({ ready: true }), generate: async (job, { signal }) => {
       app.calls.push({ id: job.id, prompt: job.prompt });
+      if (app.failures.delete(job.prompt)) throw Object.assign(new Error('利用上限'), { code: 'IMAGE_USAGE_LIMIT' });
       if (job.prompt.startsWith('SLOW')) {
         await new Promise((resolve, reject) => {
           const abort = () => reject(Object.assign(new Error('cancelled'), { code: 'CANCELLED' }));
@@ -66,6 +67,10 @@ async function setup(t, { concurrency = 5 } = {}) {
     assert.equal(response.status, 202, JSON.stringify(value)); return value;
   };
   app.create = async input => { const job = await app.enqueue(input); await waitFor(() => app.store.get(job.id).status === 'succeeded'); return job; };
+  app.fail = async input => { app.failures.add(input.prompt); const job = await app.enqueue(input); await waitFor(() => app.store.get(job.id).status === 'failed'); return job; };
+  app.previewFailed = async () => {
+    const response = await app.request('/api/jobs/failed/deletion-preview'); assert.equal(response.status, 200); return response.json();
+  };
   app.upload = async name => {
     const response = await fetch(`${app.base}/api/uploads?name=${encodeURIComponent(name)}`, {
       method: 'POST', headers: { 'Content-Type': 'image/png', 'X-Studio-Token': app.token }, body: png,
@@ -187,4 +192,69 @@ test('削除は下流の実行中・待機中だけ停止し、無関係な並�
   assert.ok(!app.calls.some(call => call.id === queued.id || call.id === sourceChild.id));
   app.pending.get(independent.id).finish(); await waitFor(() => app.store.get(independent.id).status === 'succeeded');
   assert.deepEqual(ids((await (await app.request('/api/jobs')).json()).jobs), [independent.id]);
+});
+
+test('エラーの一括削除は失敗だけを対象にし、完成・生成中・待機中の再生成とキャンセル・アップロードを保持する', async t => {
+  const app = await setup(t, { concurrency: 1 });
+  const upload = await app.upload('残す参照.png');
+  const failed = await app.fail({ prompt: '失敗した入力' });
+  const queuedOrigin = await app.fail({ prompt: 'SLOW 失敗した入力' });
+  const completedResponse = await app.request(`/api/jobs/${failed.id}/retry`, 'POST');
+  assert.equal(completedResponse.status, 202);
+  const completed = await completedResponse.json(); await waitFor(() => app.store.get(completed.id).status === 'succeeded');
+  const cancelled = await app.enqueue({ prompt: 'SLOW キャンセル' });
+  await app.request(`/api/jobs/${cancelled.id}/cancel`, 'POST');
+  const running = await app.enqueue({ prompt: 'SLOW 実行中の別案', lineageContext: { sourceJobId: failed.id, operation: 'edit' } });
+  await waitFor(() => app.pending.has(running.id));
+  const queuedResponse = await app.request(`/api/jobs/${queuedOrigin.id}/retry`, 'POST');
+  assert.equal(queuedResponse.status, 202); const queued = await queuedResponse.json();
+  assert.equal(app.store.get(queued.id).status, 'queued');
+  const preview = await app.previewFailed(), failedIds = [failed.id, queuedOrigin.id].sort();
+  assert.deepEqual(ids(preview.nodes), failedIds); assert.equal(preview.count, 2);
+  assert.equal((await (await app.request('/api/jobs')).json()).jobs.length, 6); // Preview never deletes.
+  const response = await app.request('/api/jobs/failed', 'DELETE', { planToken: preview.planToken });
+  assert.equal(response.status, 200); const deletion = await response.json();
+  assert.deepEqual(deletion.deletedIds.sort(), failedIds);
+  assert.deepEqual(ids((await (await app.request('/api/jobs')).json()).jobs), [completed.id, running.id, queued.id, cancelled.id].sort());
+  assert.equal(app.store.get(running.id).status, 'running'); assert.equal(app.pending.get(running.id).signal.aborted, false);
+  assert.equal(app.store.get(queued.id).status, 'queued'); assert.equal(app.store.get(cancelled.id).status, 'cancelled');
+  assert.deepEqual(ids((await (await app.request('/api/uploads')).json()).uploads), [upload.id]);
+  app.pending.get(running.id).finish(); await waitFor(() => app.pending.has(queued.id));
+  app.pending.get(queued.id).finish(); await waitFor(() => app.store.get(queued.id).status === 'succeeded');
+  assert.equal(app.store.get(running.id).status, 'succeeded');
+  const callsBefore = app.calls.length;
+  await app.reopen();
+  assert.deepEqual(ids((await (await app.request('/api/jobs')).json()).jobs), [completed.id, running.id, queued.id, cancelled.id].sort());
+  const trash = (await (await app.request('/api/trash')).json()).deletions;
+  assert.equal(trash.length, 1); assert.equal(trash[0].nodeCount, 2);
+  const restoredResponse = await app.request(`/api/trash/${deletion.deletionId}/restore`, 'POST');
+  assert.equal(restoredResponse.status, 200); assert.deepEqual((await restoredResponse.json()).restoredIds.sort(), failedIds);
+  assert.equal((await (await app.request('/api/jobs')).json()).jobs.length, 6);
+  assert.ok(failedIds.every(id => app.store.get(id).status === 'failed'));
+  assert.equal(app.calls.length, callsBefore); // Restore does not regenerate or clean up automatically.
+});
+
+test('エラー一括削除の確認後に対象が増えた場合は一件も削除せず、再確認を要求する', async t => {
+  const app = await setup(t), first = await app.fail({ prompt: '最初の失敗' });
+  const preview = await app.previewFailed(), second = await app.fail({ prompt: '確認後の失敗' });
+  const response = await app.request('/api/jobs/failed', 'DELETE', { planToken: preview.planToken });
+  assert.equal(response.status, 409); assert.equal((await response.json()).error.code, 'DELETE_PLAN_CHANGED');
+  assert.deepEqual(ids((await (await app.request('/api/jobs')).json()).jobs), [first.id, second.id].sort());
+  assert.equal(app.lineage.trash().length, 0);
+  const refreshed = await app.previewFailed();
+  assert.equal((await app.request('/api/jobs/failed', 'DELETE', { planToken: refreshed.planToken })).status, 200);
+});
+
+test('エラー一括削除はセッションと確認トークンを要求し、対象ゼロでは削除グループを作らない', async t => {
+  const app = await setup(t); await app.fail({ prompt: '認証付きで削除' });
+  const preview = await app.previewFailed();
+  assert.equal((await app.request('/api/jobs/failed', 'DELETE', { planToken: preview.planToken }, { 'X-Studio-Token': '' })).status, 403);
+  assert.equal((await app.request('/api/jobs/failed', 'DELETE', { planToken: preview.planToken }, { Origin: 'https://external.example' })).status, 403);
+  for (const input of [{}, { planToken: 'invalid' }, { planToken: preview.planToken, ids: [] }, []])
+    assert.equal((await app.request('/api/jobs/failed', 'DELETE', input)).status, 400);
+  assert.equal((await (await app.request('/api/jobs')).json()).jobs.length, 1);
+  assert.equal((await app.request('/api/jobs/failed', 'DELETE', { planToken: preview.planToken })).status, 200);
+  const empty = await app.previewFailed(); assert.equal(empty.count, 0);
+  const response = await app.request('/api/jobs/failed', 'DELETE', { planToken: empty.planToken });
+  assert.equal(response.status, 200); assert.equal((await response.json()).count, 0); assert.equal(app.lineage.trash().length, 1);
 });

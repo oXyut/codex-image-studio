@@ -123,3 +123,34 @@ test('削除は複数の生成を先に全件abortしてから停止を待つ', 
   assert.ok(batch.jobs.every(job => app.jobs.get(job.id).status === 'cancelled'));
   assert.ok([...workers.values()].every(worker => worker.signal.aborted));
 });
+
+test('エラー一括削除の保存失敗では非表示を確定せず、原本と削除履歴を保持する', async t => {
+  const app = await setup(t), failed = await app.seed('failed');
+  await app.jobs.update(failed.id, { status: 'failed' });
+  const plan = app.lineage.failedDeletionPreview(app.jobs), originalState = app.lineage.snapshot(), path = app.lineage.path;
+  app.lineage.path = app.directory;
+  await assert.rejects(app.lineage.softDeleteFailed(app.jobs, plan.planToken));
+  app.lineage.path = path;
+  assert.deepEqual(app.lineage.snapshot(), originalState); assert.equal(app.lineage.isDeleted(failed.id), false);
+  assert.deepEqual(JSON.parse(await readFile(path, 'utf8')), originalState);
+  assert.equal(await readFile(join(app.jobs.directory, failed.id, 'image.png'), 'utf8'), 'preserved original');
+  assert.equal((await app.lineage.softDeleteFailed(app.jobs, plan.planToken)).count, 1);
+});
+
+test('エラー一括削除と上流の削除が重なっても、片方の復元で他方の対象を復活させない', async t => {
+  const app = await setup(t), root = await app.seed('root');
+  const failed = await app.seed('failed', [{ jobId: root.id, role: 'overall' }]);
+  const completed = await app.seed('completed', [{ jobId: failed.id, role: 'overall' }]);
+  await app.jobs.update(failed.id, { status: 'failed' });
+  const cleanup = await app.lineage.softDeleteFailed(app.jobs, app.lineage.failedDeletionPreview(app.jobs).planToken);
+  assert.equal(app.lineage.isVisible(completed.id), true);
+  const subtree = await app.remove(root.id);
+  const restored = await app.lineage.restore(subtree.deletionId);
+  assert.deepEqual(restored.restoredIds.sort(), [root.id, completed.id].sort()); assert.deepEqual(restored.stillDeletedIds, [failed.id]);
+  assert.equal(app.lineage.trash()[0].nodeCount, 1);
+  assert.deepEqual((await app.lineage.restore(cleanup.deletionId)).restoredIds, [failed.id]);
+  const secondCleanup = await app.lineage.softDeleteFailed(app.jobs, app.lineage.failedDeletionPreview(app.jobs).planToken);
+  const secondSubtree = await app.remove(root.id);
+  assert.deepEqual((await app.lineage.restore(secondCleanup.deletionId)).restoredIds, []);
+  assert.deepEqual((await app.lineage.restore(secondSubtree.deletionId)).restoredIds.sort(), [root.id, failed.id, completed.id].sort());
+});
