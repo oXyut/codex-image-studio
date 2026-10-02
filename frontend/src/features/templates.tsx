@@ -64,6 +64,7 @@ import type { Template, TemplateVersion } from "@/lib/types";
 const categoryColors: Record<string, string> = {
   clothing: "bg-emerald-50 text-emerald-800",
   face: "bg-pink-50 text-pink-800",
+  expression: "bg-rose-50 text-rose-800",
   hair: "bg-violet-50 text-violet-800",
   pose: "bg-orange-50 text-orange-800",
   background: "bg-blue-50 text-blue-800",
@@ -71,6 +72,7 @@ const categoryColors: Record<string, string> = {
   camera: "bg-green-50 text-green-800",
   lighting: "bg-amber-50 text-amber-800",
   style: "bg-indigo-50 text-indigo-800",
+  negative: "bg-slate-50 text-slate-800",
 };
 const operationNames: Record<string, string> = {
   create: "作成",
@@ -158,7 +160,7 @@ function TemplateFilters({
         value={category || "all"}
         onValueChange={(value) => onCategory(value === "all" ? "" : value)}
       >
-        <SelectTrigger className="w-44" aria-label="テンプレートの分類">
+        <SelectTrigger className="w-52" aria-label="テンプレートの分類">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
@@ -454,7 +456,7 @@ export function TemplatesView({
                       <span className="sr-only">お気に入り</span>
                     </th>
                     <th className="py-4 font-normal">名前</th>
-                    <th className="hidden w-20 font-normal md:table-cell">
+                    <th className="hidden w-36 font-normal md:table-cell">
                       分類
                     </th>
                     <th className="hidden w-14 font-normal sm:table-cell">

@@ -1,6 +1,6 @@
 export const categories = [
-  ['clothing', '服装'], ['face', '顔立ち'], ['hair', '髪型'], ['pose', '体型・ポーズ'],
-  ['background', '背景'], ['color', '色味'], ['camera', '撮影'], ['lighting', '光'], ['style', '画風'], ['other', 'その他'],
+  ['clothing', '服装'], ['face', '顔立ち'], ['expression', '表情'], ['hair', '髪型'], ['pose', '体型・ポーズ'],
+  ['background', '背景'], ['color', '色味'], ['camera', '撮影'], ['lighting', '光'], ['style', '画風'], ['negative', 'ネガティブプロンプト'], ['other', 'その他'],
 ];
 export const referenceRoles = [['overall', '全体'], ['person', '人物'], ['face', '顔立ち'], ['hair', '髪型'], ['clothing', '服装'], ['pose', 'ポーズ'], ['background', '背景'], ['color', '色味'], ['composition', '構図'], ['style', '画風']];
 export const categoryLabel = id => categories.find(entry => entry[0] === id)?.[1] || 'その他';
