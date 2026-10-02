@@ -46,20 +46,18 @@ vi.mock("@xyflow/react", async () => {
       useEffect(() => onInit(instance), [onInit]);
       return (
         <div>
-          {nodes
-            .filter((node) => node.type === "image")
-            .map((node) => (
+          {nodes.map((node) => (
               <div
-                role="button"
-                tabIndex={0}
-                className="react-flow__node-image"
+                role={node.type === "image" ? "button" : undefined}
+                tabIndex={node.type === "image" ? 0 : undefined}
+                className={`react-flow__node-${node.type}`}
                 data-id={node.id}
                 key={node.id}
                 aria-label={node.ariaLabel}
                 onClick={(event) => onNodeClick(event, node)}
               >
                 {(() => {
-                  const Component = nodeTypes.image;
+                  const Component = nodeTypes[node.type!];
                   return <Component data={node.data} />;
                 })()}
               </div>
@@ -265,5 +263,60 @@ describe("LineageView", () => {
     fireEvent.keyDown(node, { key: " " });
     expect(studio.openPreview).toHaveBeenCalledTimes(2);
     expect(studio.openPreview).toHaveBeenLastCalledWith(child);
+  });
+
+  it("初期表示で同時作成を2列にまとめ、まとまりごとに展開・再収納できる", async () => {
+    const batch = { id: "four-variants", count: 4 };
+    const variants = [1, 2, 3, 4].map((index) => ({
+      ...parent, id: `variant-${index}`, prompt: `別案 ${index}`,
+      batch: { ...batch, index }, references: [],
+    }));
+    const derived = { ...child, batch: undefined, references: [{ jobId: variants[1].id, role: "reference" }] };
+    const studio = context({ jobs: [...variants, derived], metadata: { commits: [], branches: [], uploads: [] } });
+    const user = userEvent.setup();
+    render(view(studio));
+    expect(screen.getByRole("button", { name: "まとめて表示" })).toHaveAttribute("aria-pressed", "true");
+    const positions = () => variants.map((image) => flowMocks.nodes.find((node) => node.id === image.id)!.position);
+    const compact = positions();
+    expect(compact[0].y).toBe(compact[1].y);
+    expect(compact[0].x).toBe(compact[2].x);
+    expect(compact[2].y).toBe(compact[3].y);
+    const edgeIds = flowMocks.edges.map((edge) => edge.id);
+    expect(flowMocks.edges.some((edge) => edge.source === variants[1].id && edge.target === derived.id)).toBe(true);
+
+    await user.click(screen.getByRole("button", { name: /同時作成 #four-vを展開/ }));
+    const expanded = positions();
+    expect(new Set(expanded.map((point) => point.x)).size).toBe(1);
+    expect(expanded[3].y - expanded[0].y).toBeGreaterThan(compact[3].y - compact[0].y);
+    expect(flowMocks.edges.map((edge) => edge.id)).toEqual(edgeIds);
+    expect(studio.openPreview).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: /同時作成 #four-vをまとめて表示/ }));
+    expect(positions()).toEqual(compact);
+
+    await user.click(screen.getByRole("button", { name: "個別表示" }));
+    expect(positions()).toEqual(expanded);
+    await user.click(screen.getByRole("button", { name: "まとめて表示" }));
+    expect(positions()).toEqual(compact);
+    await user.click(screen.getByRole("button", { name: /別案 2、完成/ }));
+    expect(studio.openPreview).toHaveBeenCalledExactlyOnceWith(variants[1]);
+  });
+
+  it("まとまりでも生成状態と表示・削除件数を残し、更新だけでは表示範囲を変えない", async () => {
+    const batch = { id: "states", count: 4, deletedCount: 1 };
+    const variants = ["running", "failed", "succeeded"].map((status, index) => ({
+      ...parent, id: `state-${index}`, prompt: `状態 ${index}`, status,
+      batch: { ...batch, index: index + 1 }, references: [],
+    })) as ImageSource[];
+    const studio = context({ jobs: variants, metadata: { commits: [], branches: [], uploads: [] } });
+    const { rerender } = render(view(studio));
+    expect(screen.getByText("表示 3 / 4枚 · 削除 1枚")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /状態 0、生成中/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /状態 1、エラー/ })).toBeInTheDocument();
+    await waitFor(() => expect(flowMocks.fitView).toHaveBeenCalledTimes(1));
+    rerender(view({ ...studio, jobs: variants.map((image) => ({ ...image, status: "succeeded" })) }));
+    expect(flowMocks.fitView).toHaveBeenCalledTimes(1);
+    fireEvent.change(screen.getByRole("textbox", { name: "系統図を検索" }), { target: { value: "状態 0" } });
+    expect(screen.getByText("表示 1 / 4枚 · 削除 1枚")).toBeInTheDocument();
+    expect(flowMocks.nodes.filter((node) => node.type === "image").map((node) => node.id)).toEqual(["state-0"]);
   });
 });
