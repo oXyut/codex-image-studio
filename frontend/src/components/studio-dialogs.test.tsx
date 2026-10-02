@@ -114,6 +114,9 @@ describe("拡大画像プレビュー", () => {
     const user = userEvent.setup();
     const onPreview = vi.fn();
     render(<Preview onPreview={onPreview} />);
+    expect(screen.getByRole("complementary", { name: "画像の詳細" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "詳細" })).toHaveAttribute("aria-expanded", "true");
+    await user.click(screen.getByRole("button", { name: "詳細" }));
     expect(screen.queryByRole("complementary")).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "詳細" }));
     expect(screen.getAllByRole("dialog")).toHaveLength(1);
@@ -165,7 +168,6 @@ describe("拡大画像プレビュー", () => {
     fireEvent.load(img);
     await user.click(screen.getByRole("button", { name: "画像を拡大" }));
     expect(screen.getByLabelText("現在の表示倍率")).toHaveTextContent("125%");
-    await user.click(screen.getByRole("button", { name: "詳細" }));
     await user.click(screen.getByRole("button", { name: "次の画像" }));
     expect(screen.getByLabelText("現在の表示倍率")).toHaveTextContent("100%");
     expect(

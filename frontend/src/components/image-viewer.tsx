@@ -26,12 +26,12 @@ export function ImageViewer({
   onSource: (source: ImageSource | null) => void;
 }) {
   const studio = useStudio();
-  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(true);
   const detailsId = useId();
   const hasImage = Boolean(source?.image);
   const showDetails = detailsOpen || !hasImage;
   useEffect(() => {
-    if (!source) setDetailsOpen(false);
+    if (!source) setDetailsOpen(true);
   }, [source?.id]);
 
   return (
@@ -39,7 +39,7 @@ export function ImageViewer({
       open={!!source}
       onOpenChange={(open) => {
         if (!open) {
-          setDetailsOpen(false);
+          setDetailsOpen(true);
           onSource(null);
         }
       }}
@@ -95,7 +95,7 @@ export function ImageViewer({
               size="icon"
               aria-label="画像プレビューを閉じる"
               onClick={() => {
-                setDetailsOpen(false);
+                setDetailsOpen(true);
                 onSource(null);
               }}
             >
