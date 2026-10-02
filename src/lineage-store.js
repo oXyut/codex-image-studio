@@ -67,6 +67,7 @@ function checkState(state) {
     for (const deletion of state.deletions) {
       if (!deletion || !idPattern.test(deletion.id) || deletionIds.has(deletion.id) || !jobIds.has(deletion.rootId) ||
         typeof deletion.title !== 'string' || typeof deletion.deletedAt !== 'string' ||
+        (deletion.scope !== undefined && deletion.scope !== 'nodes') ||
         (deletion.restoredAt !== null && typeof deletion.restoredAt !== 'string') ||
         !Array.isArray(deletion.nodeIds) || !deletion.nodeIds.includes(deletion.rootId) ||
         deletion.nodeIds.some(id => !jobIds.has(id)) || new Set(deletion.nodeIds).size !== deletion.nodeIds.length) throw new Error('削除履歴のデータを確認してください。');
@@ -91,13 +92,16 @@ function descendants(state, roots) {
 }
 
 function deletedIds(state) {
-  return descendants(state, (state.deletions ?? []).filter(deletion => !deletion.restoredAt).flatMap(deletion => deletion.nodeIds));
+  const active = (state.deletions ?? []).filter(deletion => !deletion.restoredAt);
+  const hidden = descendants(state, active.filter(deletion => deletion.scope !== 'nodes').flatMap(deletion => deletion.nodeIds));
+  for (const deletion of active) if (deletion.scope === 'nodes') for (const id of deletion.nodeIds) hidden.add(id);
+  return hidden;
 }
 
 function expandDeletionGroups(state) {
   for (const deletion of state.deletions ?? []) {
     if (deletion.restoredAt) continue;
-    deletion.nodeIds = [...descendants(state, deletion.nodeIds)].sort();
+    if (deletion.scope !== 'nodes') deletion.nodeIds = [...descendants(state, deletion.nodeIds)].sort();
     deletion.uploadCount = deletion.nodeIds.filter(id => state.commits.find(commit => commit.jobId === id)?.operation === 'upload').length;
     deletion.jobCount = deletion.nodeIds.length - deletion.uploadCount;
   }
@@ -218,6 +222,31 @@ export class LineageStore {
     state.branches.push(branch); state.commits.push(commit); return commit;
   }
   async recordUpload(upload) { return this.mutate(state => this.addUpload(state, upload)); }
+  failedDeletionPreview(jobs, state = this.state) {
+    const hidden = deletedIds(state), commits = new Map(state.commits.map(commit => [commit.jobId, commit]));
+    const nodes = jobs.list().filter(job => job.status === 'failed' && commits.has(job.id) &&
+      commits.get(job.id).operation !== 'upload' && !hidden.has(job.id) && !this.pendingDeletionIds.has(job.id))
+      .map(job => ({ id: job.id, title: commits.get(job.id).title, status: job.status })).sort((a, b) => a.id.localeCompare(b.id));
+    const planToken = createHash('sha256').update(JSON.stringify({ scope: 'failed', nodeIds: nodes.map(node => node.id) })).digest('hex');
+    return { planToken, nodes, count: nodes.length };
+  }
+  async softDeleteFailed(jobs, planToken) {
+    if (typeof planToken !== 'string' || !/^[a-f0-9]{64}$/.test(planToken)) throw new AppError('削除する画像を確認してからお試しください。', 'INVALID_DELETE_PLAN', 400);
+    const pending = new Set();
+    try {
+      return await this.mutate(state => {
+        const plan = this.failedDeletionPreview(jobs, state);
+        if (plan.planToken !== planToken) throw new AppError('削除対象が変わりました。対象をもう一度確認してください。', 'DELETE_PLAN_CHANGED', 409);
+        if (!plan.count) return { deletionId: null, deletedIds: [], count: 0 };
+        const nodeIds = plan.nodes.map(node => node.id);
+        for (const id of nodeIds) { pending.add(id); this.pendingDeletionIds.add(id); }
+        const deletion = { id: randomUUID(), rootId: nodeIds[0], title: `エラー画像 ${plan.count}件`, scope: 'nodes',
+          deletedAt: new Date().toISOString(), restoredAt: null, nodeIds, jobCount: plan.count, uploadCount: 0 };
+        state.deletions.push(deletion);
+        return { deletionId: deletion.id, deletedIds: nodeIds, count: plan.count };
+      });
+    } finally { for (const id of pending) this.pendingDeletionIds.delete(id); }
+  }
   deletionPlan(rootId, state = this.state) {
     const root = state.commits.find(commit => commit.jobId === rootId);
     if (!root) throw missing();

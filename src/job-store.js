@@ -159,7 +159,10 @@ export class JobManager {
     return this.lineage.softDelete(rootId, planToken, { cancel: ids => this.cancelMany(ids) });
   }
   assertRunnable(job) {
-    for (const id of [job.id, ...(job.references ?? []).map(reference => reference.jobId ?? reference.uploadId), job.lineageIntent?.sourceJobId].filter(Boolean)) this.lineage?.assertActive(id);
+    // The recipe origin is already copied and recorded before execution. A
+    // failed-only cleanup may hide it while this accepted retry stays runnable.
+    // Subtree deletion still hides this job itself and actual references.
+    for (const id of [job.id, ...(job.references ?? []).map(reference => reference.jobId ?? reference.uploadId)].filter(Boolean)) this.lineage?.assertActive(id);
   }
   drain() {
     if (this.closed) return;

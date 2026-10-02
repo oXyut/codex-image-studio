@@ -1,9 +1,10 @@
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { StudioContext } from "@/lib/studio-context";
 import type { ImageSource, StudioContextValue } from "@/lib/types";
 import { HistoryView } from "./history";
+import { ApiError } from "@/lib/api";
 
 afterEach(cleanup);
 function job(id: string, extra: Partial<ImageSource> = {}): ImageSource {
@@ -24,6 +25,7 @@ function studio(jobs: ImageSource[]): StudioContextValue {
     jobs,
     uploads: [],
     loading: false,
+    draft: { count: 1 },
     metadata: { commits: [], branches: [], uploads: [] },
     view: "history",
     selectedId: null,
@@ -32,6 +34,8 @@ function studio(jobs: ImageSource[]): StudioContextValue {
     navigate: vi.fn(),
     addReference: vi.fn().mockReturnValue(true),
     openTrash: vi.fn(),
+    api: vi.fn(),
+    refresh: vi.fn().mockResolvedValue(undefined),
     setFavorite: vi.fn().mockResolvedValue(undefined),
     favoritePendingIds: [],
     run: vi.fn(async (action) => { await action(); }),
@@ -39,6 +43,85 @@ function studio(jobs: ImageSource[]): StudioContextValue {
 }
 
 describe("生成履歴", () => {
+  it("エラーだけの件数を表示し、絞り込み中でも履歴全体の対象を確認して手動で削除する", async () => {
+    const failed = job("失敗", { status: "failed", image: undefined });
+    const otherFailed = job("別の失敗", { status: "failed", image: undefined });
+    const complete = job("完成画像");
+    const context = studio([failed, otherFailed, complete, job("停止", { status: "cancelled", image: undefined })]);
+    context.selectedId = failed.id;
+    vi.mocked(window.matchMedia).mockReturnValueOnce({ ...window.matchMedia("(min-width: 1280px)"), matches: true });
+    const plan = { planToken: "confirmed", count: 2, nodes: [failed, otherFailed].map((source) => ({ ...source, title: source.prompt })) };
+    vi.mocked(context.api).mockResolvedValueOnce(plan).mockResolvedValueOnce({ deletedIds: [failed.id, otherFailed.id], count: 2 });
+    const user = userEvent.setup();
+    const { rerender } = render(<StudioContext.Provider value={context}><HistoryView /></StudioContext.Provider>);
+    expect(context.api).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "完成" }));
+    await user.click(screen.getByRole("button", { name: "エラー画像を一括削除（2件）" }));
+    const dialog = screen.getByRole("dialog", { name: "エラー画像を一括削除" });
+    expect(await within(dialog).findByText("削除対象：エラー画像 2件")).toBeInTheDocument();
+    expect(within(dialog).getByText("別の失敗")).toBeInTheDocument();
+    expect(within(dialog).queryByText("完成画像")).not.toBeInTheDocument();
+    expect(context.api).toHaveBeenCalledTimes(1);
+    await user.click(within(dialog).getByRole("button", { name: "2件をゴミ箱に移動" }));
+    expect(context.api).toHaveBeenLastCalledWith("/api/jobs/failed", { method: "DELETE", body: JSON.stringify({ planToken: "confirmed" }) });
+    expect(context.refresh).toHaveBeenCalledTimes(1);
+    expect(context.select).toHaveBeenCalledWith(null);
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    rerender(<StudioContext.Provider value={{ ...context, jobs: [complete], selectedId: null }}><HistoryView /></StudioContext.Provider>);
+    expect(screen.getByRole("button", { name: "エラー画像を一括削除（0件）" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "完成画像を選択" })).toBeInTheDocument();
+  });
+
+  it("一括削除をキャンセルすると削除せず、対象のない履歴ではボタンを無効にする", async () => {
+    const context = studio([job("失敗", { status: "failed", image: undefined })]);
+    vi.mocked(context.api).mockResolvedValue({ planToken: "confirmed", count: 1, nodes: [{ id: "失敗", title: "失敗" }] });
+    const user = userEvent.setup();
+    const { rerender } = render(<StudioContext.Provider value={context}><HistoryView /></StudioContext.Provider>);
+    await user.click(screen.getByRole("button", { name: "エラー画像を一括削除（1件）" }));
+    await screen.findByText("削除対象：エラー画像 1件");
+    await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "キャンセル" }));
+    expect(context.api).toHaveBeenCalledTimes(1); expect(context.refresh).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "失敗を選択" })).toBeInTheDocument();
+    rerender(<StudioContext.Provider value={{ ...context, loading: true }}><HistoryView /></StudioContext.Provider>);
+    expect(screen.getByRole("button", { name: "エラー画像を一括削除（1件）" })).toBeDisabled();
+    rerender(<StudioContext.Provider value={{ ...context, jobs: [job("停止", { status: "cancelled", image: undefined })] }}><HistoryView /></StudioContext.Provider>);
+    expect(screen.getByRole("button", { name: "エラー画像を一括削除（0件）" })).toBeDisabled();
+  });
+
+  it("対象が増えたら一覧を更新し、再確認後のクリックで新しいトークンを送る", async () => {
+    const context = studio([job("失敗", { status: "failed", image: undefined })]);
+    vi.mocked(context.api)
+      .mockResolvedValueOnce({ planToken: "before", count: 1, nodes: [{ id: "one", title: "失敗" }] })
+      .mockRejectedValueOnce(new ApiError("変更あり", "DELETE_PLAN_CHANGED", 409))
+      .mockResolvedValueOnce({ planToken: "after", count: 2, nodes: [{ id: "one", title: "失敗" }, { id: "two", title: "新しい失敗" }] })
+      .mockResolvedValueOnce({ deletedIds: ["one", "two"], count: 2 });
+    const user = userEvent.setup();
+    render(<StudioContext.Provider value={context}><HistoryView /></StudioContext.Provider>);
+    await user.click(screen.getByRole("button", { name: "エラー画像を一括削除（1件）" }));
+    await user.click(await screen.findByRole("button", { name: "1件をゴミ箱に移動" }));
+    expect(await screen.findByText("削除対象：エラー画像 2件")).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent("もう一度削除してください");
+    expect(context.api).toHaveBeenCalledTimes(3); expect(context.refresh).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "2件をゴミ箱に移動" }));
+    expect(context.api).toHaveBeenLastCalledWith("/api/jobs/failed", { method: "DELETE", body: JSON.stringify({ planToken: "after" }) });
+    expect(context.select).not.toHaveBeenCalled();
+  });
+
+  it("対象の取得に失敗したら削除を無効にし、再読み込みで復帰できる", async () => {
+    const context = studio([job("失敗", { status: "failed", image: undefined })]);
+    vi.mocked(context.api).mockRejectedValueOnce(new Error("取得できませんでした"))
+      .mockResolvedValueOnce({ planToken: "confirmed", count: 0, nodes: [] });
+    const user = userEvent.setup();
+    render(<StudioContext.Provider value={context}><HistoryView /></StudioContext.Provider>);
+    await user.click(screen.getByRole("button", { name: "エラー画像を一括削除（1件）" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("取得できませんでした");
+    expect(screen.getByRole("button", { name: "0件をゴミ箱に移動" })).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "再読み込み" }));
+    expect(await screen.findByText("削除するエラー画像はありません。")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "0件をゴミ箱に移動" })).toBeDisabled();
+    expect(context.api).toHaveBeenCalledTimes(2);
+  });
+
   it("カードの星からお気に入りを変更しても画像選択や参照追加を行わない", async () => {
     const source = job("森の家");
     const context = studio([source]);
