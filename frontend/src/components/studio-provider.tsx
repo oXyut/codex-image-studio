@@ -50,6 +50,8 @@ export function StudioProvider({ children }: { children: ReactNode }) {
     [deleting, setDeleting] = useState<ImageSource | null>(null),
     [trash, setTrash] = useState(false);
   const refreshing = useRef<Promise<void> | null>(null);
+  const favoriteLocks = useRef(new Set<string>());
+  const [favoritePendingIds, setFavoritePendingIds] = useState<string[]>([]);
   useEffect(() => {
     try {
       localStorage.setItem(draftKey, JSON.stringify(saved));
@@ -319,6 +321,28 @@ export function StudioProvider({ children }: { children: ReactNode }) {
       await api(`/api/jobs/${source.id}/cancel`, { method: "POST" });
       await refresh(true);
       toast.success("生成を停止しました。");
+    },
+    favoritePendingIds,
+    setFavorite: async (source, favorite) => {
+      if (favoriteLocks.current.has(source.id)) return;
+      favoriteLocks.current.add(source.id);
+      setFavoritePendingIds([...favoriteLocks.current]);
+      try {
+        const updated = await api<ImageSource>(`/api/jobs/${source.id}/favorite`, {
+          method: "PATCH",
+          body: JSON.stringify({ favorite }),
+        });
+        // Finish any earlier poll before loading the saved state.
+        await refresh(true);
+        setJobs((previous) =>
+          previous.map((job) =>
+            job.id === source.id ? { ...job, favorite: updated.favorite } : job,
+          ),
+        );
+      } finally {
+        favoriteLocks.current.delete(source.id);
+        setFavoritePendingIds([...favoriteLocks.current]);
+      }
     },
     openPreview: setPreview,
     requestDelete: setDeleting,

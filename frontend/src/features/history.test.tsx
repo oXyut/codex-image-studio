@@ -32,10 +32,46 @@ function studio(jobs: ImageSource[]): StudioContextValue {
     navigate: vi.fn(),
     addReference: vi.fn().mockReturnValue(true),
     openTrash: vi.fn(),
+    setFavorite: vi.fn().mockResolvedValue(undefined),
+    favoritePendingIds: [],
+    run: vi.fn(async (action) => { await action(); }),
   } as unknown as StudioContextValue;
 }
 
 describe("生成履歴", () => {
+  it("カードの星からお気に入りを変更しても画像選択や参照追加を行わない", async () => {
+    const source = job("森の家");
+    const context = studio([source]);
+    const user = userEvent.setup();
+    render(<StudioContext.Provider value={context}><HistoryView /></StudioContext.Provider>);
+    await user.click(screen.getByRole("button", { name: "森の家をお気に入りに追加" }));
+    expect(context.setFavorite).toHaveBeenCalledWith(source, true);
+    expect(context.select).not.toHaveBeenCalled();
+    expect(context.openPreview).not.toHaveBeenCalled();
+    expect(context.addReference).not.toHaveBeenCalled();
+  });
+
+  it("お気に入りと検索を併用し、解除後も同時作成の全件数を保つ", async () => {
+    const first = job("森の朝", { favorite: true, batch: { id: "forest", index: 1, count: 2 } });
+    const second = job("森の夕方", { favorite: false, batch: { id: "forest", index: 2, count: 2 } });
+    const night = job("夜", { favorite: true });
+    const context = studio([first, second, night]);
+    const user = userEvent.setup();
+    const { rerender } = render(<StudioContext.Provider value={context}><HistoryView /></StudioContext.Provider>);
+    await user.click(screen.getByRole("button", { name: "お気に入りのみ" }));
+    expect(screen.getByRole("button", { name: "お気に入りのみ" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.queryByRole("button", { name: "森の夕方を選択" })).not.toBeInTheDocument();
+    expect(screen.getByText("表示 1枚 / 保存 2枚")).toBeInTheDocument();
+    await user.type(screen.getByRole("searchbox", { name: "履歴を検索" }), "森");
+    expect(screen.queryByRole("button", { name: "夜を選択" })).not.toBeInTheDocument();
+    rerender(<StudioContext.Provider value={{ ...context, jobs: [{ ...first, favorite: false }, second, night] }}><HistoryView /></StudioContext.Provider>);
+    expect(screen.getByText("一致する履歴がありません")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "絞り込みを解除" }));
+    expect(screen.getByRole("button", { name: "お気に入りのみ" })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("button", { name: "森の夕方を選択" })).toBeInTheDocument();
+    expect(screen.getByRole("searchbox", { name: "履歴を検索" })).toHaveValue("");
+  });
+
   it("画像選択ではプレビューや参照追加を行わず、独立したボタンから参照を追加する", async () => {
     const source = job("森の家");
     const context = studio([source]);
