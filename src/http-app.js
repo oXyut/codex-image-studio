@@ -6,11 +6,7 @@ import { AppError, validateBatchCount } from './validation.js';
 import { prepareGeneration } from './prompt-builder.js';
 import { MAX_UPLOAD_BYTES } from './upload-store.js';
 
-const staticFiles = { '/': ['index.html', 'text/html; charset=utf-8'], '/app.js': ['app.js', 'text/javascript; charset=utf-8'], '/prompt-utils.js': ['prompt-utils.js', 'text/javascript; charset=utf-8'], '/studio-features.js': ['studio-features.js', 'text/javascript; charset=utf-8'], '/lineage-view.js': ['lineage-view.js', 'text/javascript; charset=utf-8'], '/lineage-utils.js': ['lineage-utils.js', 'text/javascript; charset=utf-8'], '/lineage.css': ['lineage.css', 'text/css; charset=utf-8'], '/template-history.js': ['template-history.js', 'text/javascript; charset=utf-8'], '/template-diff.js': ['template-diff.js', 'text/javascript; charset=utf-8'], '/template-history.css': ['template-history.css', 'text/css; charset=utf-8'], '/style.css': ['style.css', 'text/css; charset=utf-8'], '/favicon.svg': ['favicon.svg', 'image/svg+xml'] };
-
-staticFiles['/canvas-options.js'] = ['canvas-options.js', 'text/javascript; charset=utf-8'];
-staticFiles['/deletion-ui.js'] = ['deletion-ui.js', 'text/javascript; charset=utf-8'];
-staticFiles['/batch-groups.js'] = ['batch-groups.js', 'text/javascript; charset=utf-8'];
+const assetTypes = { js: 'text/javascript; charset=utf-8', css: 'text/css; charset=utf-8', woff2: 'font/woff2' };
 
 export function createApp({ store, manager, adapter, templates, lineage, uploads, publicDirectory }) {
   if (lineage) { store.lineage = lineage; if (uploads) uploads.lineage = lineage; }
@@ -19,7 +15,8 @@ export function createApp({ store, manager, adapter, templates, lineage, uploads
     response.setHeader('X-Content-Type-Options', 'nosniff');
     response.setHeader('Referrer-Policy', 'no-referrer');
     response.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
-    response.setHeader('Content-Security-Policy', "default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'");
+    const styleNonce = randomBytes(18).toString('base64');
+    response.setHeader('Content-Security-Policy', `default-src 'self'; img-src 'self' data:; style-src 'self' 'nonce-${styleNonce}'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'`);
     response.setHeader('Cache-Control', 'no-store');
     try {
       const expectedPort = String(server.address()?.port);
@@ -140,9 +137,21 @@ export function createApp({ store, manager, adapter, templates, lineage, uploads
           response.end(await readFile(path)); return;
         }
       }
-      if (request.method === 'GET' && Object.hasOwn(staticFiles, pathname)) {
-        const [file, mime] = staticFiles[pathname];
-        response.setHeader('Content-Type', mime); response.end(await readFile(join(publicDirectory, file))); return;
+      if (request.method === 'GET' && pathname === '/') {
+        let page;
+        try { page = await readFile(join(publicDirectory, 'build', 'index.html'), 'utf8'); }
+        catch (error) { if (error.code === 'ENOENT') throw new AppError('npm run build を実行してから起動してください。', 'BUILD_MISSING', 503); throw error; }
+        response.setHeader('Content-Type', 'text/html; charset=utf-8');
+        response.end(page.replace('__STYLE_NONCE__', styleNonce)); return;
+      }
+      const asset = pathname.match(/^\/assets\/([A-Za-z0-9_-]+\.(js|css|woff2))$/);
+      if (request.method === 'GET' && (asset || pathname === '/favicon.svg')) {
+        const path = asset ? join(publicDirectory, 'build', 'assets', asset[1]) : join(publicDirectory, 'favicon.svg');
+        let stat;
+        try { stat = await lstat(path); } catch (error) { if (error.code === 'ENOENT') throw new AppError('ページが見つかりません。', 'NOT_FOUND', 404); throw error; }
+        if (!stat.isFile() || stat.isSymbolicLink()) throw new AppError('ページが見つかりません。', 'NOT_FOUND', 404);
+        response.setHeader('Content-Type', asset ? assetTypes[asset[2]] : 'image/svg+xml');
+        response.end(await readFile(path)); return;
       }
       throw new AppError('ページが見つかりません。', 'NOT_FOUND', 404);
     } catch (error) {

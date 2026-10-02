@@ -28,22 +28,25 @@ test('ローカル画面を配信し、外部サイトからの生成要求を�
   const status = await new Promise((resolve, reject) => { const req = httpRequest(`${base}/api/jobs`, { headers: { Host: 'evil.example' } }, res => { res.resume(); resolve(res.statusCode); }); req.on('error', reject); req.end(); });
   assert.equal(status, 403);
 });
-test('画面から読み込むすべてのJavaScriptモジュールを配信する', async t => {
+test('ビルド済みの画面・JS・CSSを配信し、旧UIと任意ファイルは配信しない', async t => {
   const { base } = await setup(t);
-  const html = await (await fetch(base)).text();
-  const pending = [...html.matchAll(/<script[^>]+src="([^"]+)"/g)].map(match => new URL(match[1], base));
-  const visited = new Set();
-  while (pending.length) {
-    const url = pending.pop();
-    if (visited.has(url.href)) continue;
-    visited.add(url.href);
-    const response = await fetch(url);
-    assert.equal(response.status, 200, `モジュールを配信できません: ${url.pathname}`);
-    assert.match(response.headers.get('content-type'), /javascript/);
-    const source = await response.text();
-    for (const match of source.matchAll(/import\s+[^;]+?from\s+['"]([^'"]+)['"]/g)) pending.push(new URL(match[1], url));
+  const page = await fetch(base); const html = await page.text();
+  const nonce = html.match(/name="style-nonce" content="([^"]+)"/)[1];
+  assert.ok(nonce && nonce !== '__STYLE_NONCE__');
+  assert.ok(page.headers.get('content-security-policy').includes(`'nonce-${nonce}'`));
+  const scripts = [...html.matchAll(/<script[^>]+src="([^"]+)"/g)].map(match => match[1]);
+  const styles = [...html.matchAll(/<link[^>]+href="([^"]+\.css)"/g)].map(match => match[1]);
+  assert.ok(scripts.length); assert.ok(styles.length);
+  for (const path of [...scripts,...styles]) {
+    assert.match(path, /^\/assets\/[A-Za-z0-9_-]+\.(js|css)$/);
+    const response = await fetch(`${base}${path}`); assert.equal(response.status,200);
+    assert.match(response.headers.get('content-type'), path.endsWith('.js') ? /javascript/ : /css/);
+    assert.ok((await response.text()).length > 0);
   }
-  assert.ok(visited.has(`${base}/canvas-options.js`));
+  for (const path of ['/app.js','/index.html','/assets/index.html','/assets/missing.js','/assets/..%2f..%2f.env','/assets/package.json']) assert.equal((await fetch(`${base}${path}`)).status,404);
+  const secondPage = await fetch(base);
+  assert.notEqual(secondPage.headers.get('content-security-policy'), page.headers.get('content-security-policy'));
+  assert.doesNotMatch(page.headers.get('content-security-policy'), /script-src[^;]*unsafe-inline/);
 });
 test('入力エラーとパストラバーサルを拒否する', async t => {
   const { base, token } = await setup(t);

@@ -4,12 +4,44 @@
   "private": true,
   "type": "module",
   "description": "ChatGPT認証のCodex CLIで動くローカル画像生成スタジオ",
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22.12.0"
+  },
   "scripts": {
+    "predev": "npm run build",
     "dev": "node --env-file-if-exists=.env server.js",
+    "prestart": "npm run build",
     "start": "node --env-file-if-exists=.env server.js",
-    "test": "node --test test/*.test.js",
-    "check": "node scripts/check.js",
+    "build": "vite build",
+    "test": "npm run build && node --test test/*.test.js && npm run test:frontend",
+    "test:frontend": "vitest run",
+    "check": "node scripts/check.js && tsc --noEmit && npm run build",
     "doctor": "node --env-file-if-exists=.env scripts/doctor.js"
+  },
+  "dependencies": {
+    "@xyflow/react": "^12.12.0",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "lucide-react": "^1.49.0",
+    "radix-ui": "^1.6.7",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "sonner": "^2.0.8",
+    "tailwind-merge": "^3.7.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.3",
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.7",
+    "@types/node": "^22.20.5",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.1",
+    "jsdom": "^29.1.1",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.2",
+    "vitest": "^5.0.3"
   }
 }
