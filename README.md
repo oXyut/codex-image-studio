@@ -6,7 +6,7 @@ ChatGPTでログイン済みの公式Codex CLIを使って画像を生成する�
 
 ## 起動
 
-Node.js 22.12以上と、画像生成に対応したCodex CLIが必要です。フロントエンドはReact・TypeScript・shadcn/uiで構成しています。初回起動時や依存パッケージの変更後は、`npm ci`でパッケージをインストールしてください。
+Node.js 22.12以上と、画像生成に対応したCodex CLIが必要です。フロントエンドはReact・TypeScript・shadcn/uiで構成しています。サーバー、共通処理、テスト、補助スクリプトもTypeScriptで記述しています。初回起動時や依存パッケージの変更後は、`npm ci`でパッケージをインストールしてください。
 
 ```sh
 cd ~/work/codex-image-studio
@@ -17,7 +17,7 @@ npm run dev
 
 ブラウザで <http://127.0.0.1:4317> を開いてください。停止するには`Ctrl+C`を押します。既に起動中の場合は、そのURLを開くだけで利用できます。
 
-`npm run dev`と`npm start`は、起動前にViteでフロントエンドをビルドします。画面のソースは`frontend/src/`にあります。配信用のファイルは`public/build/`に出力します。起動後に画面を変更した場合は`npm run build`を実行し、ブラウザを再読み込みしてください。
+`npm run dev`と`npm start`は、起動前にTypeScriptのサーバーとViteのフロントエンドをビルドします。サーバーの実行ファイルは`dist/server.js`、画面の配信用ファイルは`public/build/`に出力します。起動後に画面だけを変更した場合は`npm run build:frontend`を実行し、ブラウザを再読み込みしてください。サーバーや共通処理を変更した場合は、サーバーを停止して`npm run dev`で起動し直してください。
 
 ログインが必要な場合は`codex login`を実行してChatGPT認証を選びます。ログイン済みの認証ファイルはアプリから直接読みません。Codex CLIが認証を管理します。
 
@@ -154,7 +154,7 @@ npm run dev
 
 `codex exec --json`は、検証した0.156.1では画像の保存先をJSONイベントに含めませんでした。このため、公式CLIのapp-serverプロトコルで`item/completed`の`imageGeneration`と`savedPath` / `result`を受け取ります。外部の非公式ラッパーやChatGPT内部HTTPエンドポイントには依存しません。
 
-`src/codex-adapter.js`にCLIとの連携を集約し、Webサーバーとジョブ管理から分離しています。CLIの仕様変更があった場合は、このアダプターを更新できます。
+`src/codex-adapter.ts`にCLIとの連携を集約し、Webサーバーとジョブ管理から分離しています。CLIの仕様変更があった場合は、このアダプターを更新できます。
 
 Codex 0.156.1で提供されるツール名は`image_gen.imagegen`です。画像生成機能が使うCLI内の実行ホストは有効にしたまま、シェルや外部連携を無効にしています。
 
@@ -186,7 +186,9 @@ npm run doctor
 
 テストはローカルの偽CLIと一時データを使い、認証情報・契約枠を消費しません。実画像生成はWeb画面の「画像を生成する」から行います。
 
-`npm run check`はJavaScriptの構文確認、TypeScriptの型確認、フロントエンドのビルドを行います。`npm test`はビルド後に既存のバックエンドテストとVitestの画面テストを実行します。画面テストだけを実行する場合は`npm run test:frontend`を使います。
+`npm run check`は画面・サーバー・共通処理・テスト・補助スクリプトを`strict`設定で型検査し、サーバーと画面をビルドします。`npm test`はビルド後に`dist/test/`のバックエンドテストとVitestの画面テストを実行します。画面テストだけを実行する場合は`npm run test:frontend`を使います。`npm run doctor`も実行前にサーバー側のTypeScriptをビルドします。
+
+画面は`frontend/src/`、サーバーは`server.ts`と`src/`、両者で使うデータ型と処理は`shared/`、補助スクリプトは`scripts/`、バックエンドテストは`test/`にあります。画面の型検査には`tsconfig.json`、サーバー側の型検査と出力には`tsconfig.server.json`を使用します。Node.js用のソースでは、ビルド後に解決できるように相対importに`.js`を指定しています。TypeScriptは対応する`.ts`を型検査します。生成されるJavaScriptとソースマップはGit管理対象から除外しています。
 
 ## 参考
 

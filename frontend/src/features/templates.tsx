@@ -1,14 +1,34 @@
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { ContextMenu, ContextMenuItem } from "@/components/ui/context-menu";
 import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type FormEvent,
-} from "react";
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
-  ArrowLeft,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
+import { dateLabel } from "@/lib/format";
+import { useStudio } from "@/lib/studio-context";
+import type { Template, TemplateLayer, TemplateVersion } from "@/lib/types";
+import { cn } from "@/lib/utils";
+import { categories, categoryLabel, searchTemplates } from "@shared/prompt-utils.js";
+import { compareTemplateVersions } from "@shared/template-diff.js";
+import {
   Archive,
+  ArrowLeft,
   Check,
   Clock3,
   FileText,
@@ -22,45 +42,8 @@ import {
   Search,
   Star,
 } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { Badge } from "@/components/ui/badge";
-import { Checkbox } from "@/components/ui/checkbox";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { ContextMenu, ContextMenuItem } from "@/components/ui/context-menu";
-import {
-  categories,
-  categoryLabel,
-  searchTemplates,
-} from "@legacy/prompt-utils.js";
-import { compareTemplateVersions } from "@legacy/template-diff.js";
-import { useStudio } from "@/lib/studio-context";
-import { dateLabel } from "@/lib/format";
-import { cn } from "@/lib/utils";
-import type { Template, TemplateVersion } from "@/lib/types";
 
 const categoryColors: Record<string, string> = {
   clothing: "bg-emerald-50 text-emerald-800",
@@ -83,7 +66,7 @@ const operationNames: Record<string, string> = {
   restore: "アーカイブから復元",
   revert: "過去版から復元",
 };
-const versionOf = (template: Template) => template.version ?? 1;
+const versionOf = (template: TemplateLayer) => template.version ?? 1;
 const isConflict = (error: unknown) =>
   (error as { status?: number; code?: string })?.status === 409 ||
   (error as { code?: string })?.code === "VERSION_CONFLICT";
@@ -409,7 +392,7 @@ export function TemplatesView({
       setBusy(false);
     }
   }
-  function useTemplate(template: Template) {
+  function useTemplate(template: TemplateLayer) {
     if (studio.addTemplate(template)) studio.navigate("create");
   }
 
@@ -732,7 +715,7 @@ function TemplateDetails({
   busy: boolean;
   onBack: () => void;
   onEdit: () => void;
-  onUse: (template: Template) => void;
+  onUse: (template: TemplateLayer) => void;
   onFavorite: () => void;
   onRestore: () => void;
 }) {
@@ -881,7 +864,7 @@ function TemplateHistory({
   onUse,
 }: {
   template: Template;
-  onUse: (template: Template) => void;
+  onUse: (template: TemplateLayer) => void;
 }) {
   const studio = useStudio();
   const [versions, setVersions] = useState<TemplateVersion[]>([]);
@@ -1247,7 +1230,7 @@ const templateNameFromBody = (body: string) =>
     .slice(0, 80)
     .replace(/[\uD800-\uDBFF]$/, "")
     .trimEnd();
-const editorFields = (template?: Template, body = ""): EditorFields => ({
+const editorFields = (template?: TemplateLayer, body = ""): EditorFields => ({
   name: template?.name ?? templateNameFromBody(body),
   body: template?.body ?? body,
   category: template?.category ?? "other",

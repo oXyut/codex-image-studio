@@ -1,70 +1,16 @@
+import type {
+  Health,
+  ImageSource,
+  LineageMetadata,
+  Reference,
+  Template,
+  TemplateLayer,
+} from '@shared/types.js';
+export type { ImageSource,LineageMetadata,Reference,Template,TemplateLayer,TemplateVersion } from '@shared/types.js';
 export type View = "create" | "history" | "lineage" | "templates";
-export type Reference = { jobId?: string; uploadId?: string; role: string };
-export type Template = {
-  id: string;
-  name: string;
-  body: string;
-  category: string;
-  tags: string[];
-  favorite: boolean;
-  version?: number;
-  archivedAt?: string | null;
-  createdAt?: string;
-  updatedAt: string;
-};
-export type TemplateVersion = Template & {
-  version: number;
-  createdAt: string;
-  operation?: string;
-};
-export type ImageSource = {
-  id: string;
-  kind?: "upload";
-  name?: string;
-  prompt?: string;
-  basePrompt?: string;
-  status: string;
-  favorite?: boolean;
-  createdAt: string;
-  size?: string;
-  style?: string;
-  transparent?: boolean;
-  layers?: Template[];
-  references?: Reference[];
-  image?: {
-    url: string;
-    downloadUrl: string;
-    width?: number;
-    height?: number;
-    bytes?: number;
-    recovered?: boolean;
-  };
-  batch?: { id: string; index: number; count: number; deletedCount?: number };
-  lineage?: {
-    title?: string;
-    notes?: string;
-    branchId?: string;
-    sourceJobId?: string;
-    parentIds?: string[];
-    operation?: string;
-    [key: string]: unknown;
-  };
-  error?:
-    | null
-    | string
-    | {
-        message?: string;
-        code?: string;
-        details?: string;
-        [key: string]: unknown;
-      };
-  errorDetails?: string;
-  message?: string;
-  [key: string]: unknown;
-};
 export type Draft = {
   prompt: string;
-  layers: Template[];
+  layers: TemplateLayer[];
   references: Reference[];
   count: number;
   size: string;
@@ -76,19 +22,14 @@ export type Draft = {
     newBranch: boolean;
   } | null;
 };
-export type Api = <T = any>(path: string, options?: RequestInit) => Promise<T>;
-export type LineageMetadata = {
-  commits: any[];
-  branches: any[];
-  uploads: ImageSource[];
-};
+export type Api = <T = unknown>(path: string, options?: RequestInit) => Promise<T>;
 export type StudioContextValue = {
   api: Api;
   jobs: ImageSource[];
   uploads: ImageSource[];
   templates: Template[];
   metadata: LineageMetadata;
-  health: { ready: boolean; message: string; version?: string } | null;
+  health: Health | null;
   loading: boolean;
   loadingError: string;
   refresh: () => Promise<void>;
@@ -105,7 +46,7 @@ export type StudioContextValue = {
   graphBatchId: string;
   setGraphBatchId: (id: string) => void;
   addReference: (source: ImageSource, role?: string) => boolean;
-  addTemplate: (template: Template) => boolean;
+  addTemplate: (template: TemplateLayer) => boolean;
   replaceFromSource: (source: ImageSource, derive?: boolean) => void;
   applyExample: (prompt: string) => void;
   generate: () => Promise<void>;

@@ -1,19 +1,9 @@
-import {
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-} from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
 import { StudioContext } from "@/lib/studio-context";
 import type { ImageSource, StudioContextValue } from "@/lib/types";
-import {
-  ImageActions,
-  ImageContextMenu,
-  ImageFavoriteButton,
-} from "./image-actions";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { ImageActions, ImageContextMenu, ImageFavoriteButton } from "./image-actions";
 import { ImageInspector } from "./image-inspector";
 
 afterEach(cleanup);
@@ -296,6 +286,7 @@ describe("画像詳細", () => {
       image: undefined,
       status: "failed",
       error: {
+        code: "CONTENT_REVIEW",
         message: "内容を確認してください",
         advice: "文章を見直してから再試行できます。",
       },

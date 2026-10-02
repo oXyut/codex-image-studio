@@ -1,16 +1,10 @@
-import {
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-} from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
-import { type ComponentType } from "react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { Edge, Node, ReactFlowInstance } from "@xyflow/react";
 import { StudioContext } from "@/lib/studio-context";
 import type { ImageSource, StudioContextValue } from "@/lib/types";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import type { Edge, Node, ReactFlowInstance } from "@xyflow/react";
+import { type ComponentType } from "react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LineageView } from "./lineage";
 
 const flowMocks = vi.hoisted(() => ({
@@ -41,7 +35,7 @@ vi.mock("@xyflow/react", async () => {
       onNodeClick,
       nodeTypes,
     }: {
-      nodeTypes: Record<string, ComponentType<any>>;
+      nodeTypes: Record<string, ComponentType<{ data: Record<string, unknown> }>>;
       nodes: Node[];
       edges: Edge[];
       onInit: (flow: ReactFlowInstance) => void;

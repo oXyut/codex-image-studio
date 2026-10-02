@@ -1,4 +1,15 @@
-import { useEffect, useMemo, useState } from "react";
+import { FailedJobsDeleteDialog } from "@/components/failed-jobs-delete-dialog";
+import { ImageContextMenu, ImageFavoriteButton } from "@/components/image-actions";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { dateLabel, errorMessage, imageTitle, isComplete, statusLabels } from "@/lib/format";
+import { useStudio } from "@/lib/studio-context";
+import type { ImageSource } from "@/lib/types";
+import { cn } from "@/lib/utils";
+import { groupGenerationHistory } from "@shared/batch-groups.js";
+import { canvasSizeLabel } from "@shared/canvas-options.js";
 import {
   ArrowRight,
   Check,
@@ -12,33 +23,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { groupGenerationHistory } from "@legacy/batch-groups.js";
-import { canvasSizeLabel } from "@legacy/canvas-options.js";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  ImageContextMenu,
-  ImageFavoriteButton,
-} from "@/components/image-actions";
-import { FailedJobsDeleteDialog } from "@/components/failed-jobs-delete-dialog";
-import { useStudio } from "@/lib/studio-context";
-import {
-  dateLabel,
-  errorMessage,
-  imageTitle,
-  isComplete,
-  statusLabels,
-} from "@/lib/format";
-import type { ImageSource } from "@/lib/types";
-import { cn } from "@/lib/utils";
+import { useEffect, useMemo, useState } from "react";
 
 type HistoryFilter = "all" | "complete" | "active" | "failed" | "cancelled";
 type HistoryGroup = {

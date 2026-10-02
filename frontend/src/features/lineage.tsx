@@ -1,4 +1,20 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { ImageContextMenu } from "@/components/image-actions";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { openContextMenuWithKeyboard } from "@/components/ui/context-menu";
+import { Input } from "@/components/ui/input";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { dateLabel, statusLabels } from "@/lib/format";
+import { useStudio } from "@/lib/studio-context";
+import { cn } from "@/lib/utils";
+import {
+  buildLineageGraph,
+  filterLineageGraph,
+  layoutLineageGraph,
+  lineageBatchLabel,
+  lineageTitle,
+} from "@shared/lineage-utils.js";
 import {
   Background,
   BackgroundVariant,
@@ -25,93 +41,9 @@ import {
   Upload,
   X,
 } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
-import { ImageContextMenu } from "@/components/image-actions";
-import { openContextMenuWithKeyboard } from "@/components/ui/context-menu";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { dateLabel, statusLabels } from "@/lib/format";
-import { useStudio } from "@/lib/studio-context";
-import type { ImageSource } from "@/lib/types";
-import { cn } from "@/lib/utils";
-import {
-  buildLineageGraph,
-  filterLineageGraph,
-  layoutLineageGraph,
-  lineageBatchLabel,
-  lineageTitle,
-} from "@legacy/lineage-utils.js";
+import { useEffect, useMemo, useRef, useState } from "react";
 
-type LineageNode = {
-  id: string;
-  kind: "upload" | "generation";
-  job: ImageSource;
-  title: string;
-  notes: string;
-  branchId: string;
-  branch?: { id: string; name: string };
-  parentIds: string[];
-  sourceJobId: string | null;
-  batchId: string;
-  componentId: string;
-  dependencies: string[];
-  operation: string;
-  createdAt: string;
-};
-type LineageEdge = {
-  from: string;
-  to: string;
-  kind: "reference" | "source";
-  label: string;
-};
-type LineageGraph = {
-  nodes: LineageNode[];
-  nodeMap: Map<string, LineageNode>;
-  edges: LineageEdge[];
-  branches: { id: string; name: string }[];
-  components: { id: string; title: string; nodeIds: string[] }[];
-  batches: {
-    id: string;
-    count: number;
-    nodeIds: string[];
-    deletedCount: number;
-  }[];
-  missingEdges: LineageEdge[];
-  cyclicEdges: LineageEdge[];
-};
-type VisibleGraph = {
-  nodes: LineageNode[];
-  edges: LineageEdge[];
-  matchIds: Set<string>;
-  visibleIds: Set<string>;
-  filtered: boolean;
-};
-type GraphLayout = {
-  positions: Map<string, { x: number; y: number }>;
-  batchGroups: {
-    id: string;
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-    count: number;
-    visibleCount: number;
-    deletedCount: number;
-  }[];
-  cardHeight: number;
-};
+import type { LineageNode } from '@shared/lineage-utils.js';
 type ImageNodeData = {
   value: LineageNode;
   ancestor: boolean;
@@ -282,9 +214,9 @@ export function LineageView() {
   const graph = useMemo(
     () =>
       buildLineageGraph(
-        studio.metadata as any,
+        studio.metadata,
         studio.jobs,
-      ) as unknown as LineageGraph,
+      ),
     [studio.metadata, studio.jobs],
   );
   const visible = useMemo(
@@ -294,11 +226,11 @@ export function LineageView() {
         branchId,
         componentId,
         batchId: studio.graphBatchId,
-      }) as VisibleGraph,
+      }),
     [graph, query, branchId, componentId, studio.graphBatchId],
   );
   const layout = useMemo(
-    () => layoutLineageGraph(graph, visible) as GraphLayout,
+    () => layoutLineageGraph(graph, visible),
     [graph, visible],
   );
   const filters = [branchId, componentId, studio.graphBatchId].filter(

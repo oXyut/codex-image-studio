@@ -1,8 +1,5 @@
-import {
-  normalizeReferences,
-  reconcileDraftSources as legacyReconcile,
-} from "@legacy/studio-features.js";
-import { normalizeCanvasSize } from "@legacy/canvas-options.js";
+import { normalizeCanvasSize } from "@shared/canvas-options.js";
+import { normalizeReferences, reconcileDraftSources } from "@shared/studio-features.js";
 import type { Draft, ImageSource } from "./types";
 export const draftKey = "codex-image-studio-draft-v3";
 export const emptyDraft: Draft = {
@@ -34,7 +31,7 @@ export function normalizeDraft(raw: Partial<Draft> = {}): Draft {
     count: Number.isInteger(raw.count)
       ? Math.min(10, Math.max(1, raw.count!))
       : 1,
-    size: normalizeCanvasSize(raw.size),
+    size: normalizeCanvasSize(raw.size ?? ""),
     style: ["auto", "photo", "illustration", "minimal", "3d"].includes(
       raw.style || "",
     )
@@ -88,7 +85,7 @@ export function sourceDraft(
           ...cloneDraft(draft),
           prompt: source.basePrompt ?? source.prompt ?? "",
           layers: structuredClone(source.layers || []),
-          size: normalizeCanvasSize(source.size),
+          size: normalizeCanvasSize(source.size ?? ""),
           style: source.style || "auto",
           transparent: source.transparent === true,
         }),
@@ -109,16 +106,7 @@ export function reconcileDraft(
   jobs: ImageSource[],
   uploads: ImageSource[],
 ): Draft {
-  const reconcile = legacyReconcile as unknown as (
-    draft: Draft,
-    options: {
-      jobs: ImageSource[];
-      uploads: ImageSource[];
-      jobsLoaded: boolean;
-      uploadsLoaded: boolean;
-    },
-  ) => Pick<Draft, "references" | "lineageContext">;
-  const sources = reconcile(draft, {
+  const sources = reconcileDraftSources(draft, {
     jobs,
     uploads,
     jobsLoaded: true,

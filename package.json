@@ -9,14 +9,17 @@
   },
   "scripts": {
     "predev": "npm run build",
-    "dev": "node --env-file-if-exists=.env server.js",
+    "dev": "node --env-file-if-exists=.env dist/server.js",
     "prestart": "npm run build",
-    "start": "node --env-file-if-exists=.env server.js",
-    "build": "vite build",
-    "test": "npm run build && node --test test/*.test.js && npm run test:frontend",
+    "start": "node --env-file-if-exists=.env dist/server.js",
+    "build": "npm run build:server && npm run build:frontend",
+    "build:server": "tsc -p tsconfig.server.json && node dist/scripts/prepare-test-fixtures.js",
+    "build:frontend": "vite build",
+    "test": "npm run build && node --test dist/test/*.test.js && npm run test:frontend",
     "test:frontend": "vitest run",
-    "check": "node scripts/check.js && tsc --noEmit && npm run build",
-    "doctor": "node --env-file-if-exists=.env scripts/doctor.js"
+    "check": "tsc --noEmit && tsc -p tsconfig.server.json --noEmit && npm run build",
+    "predoctor": "npm run build:server",
+    "doctor": "node --env-file-if-exists=.env dist/scripts/doctor.js"
   },
   "dependencies": {
     "@xyflow/react": "^12.12.0",
