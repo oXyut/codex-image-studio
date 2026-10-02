@@ -65,6 +65,19 @@ test('実際に返された日本語の性的内容による拒否を認識し�
   assert.equal(generationError('性的内容による判定か、通信障害かは不明です。').category, 'unknown');
 });
 
+test('安全システムによる拒否の文面を内容判定に分類し、診断を保持する', () => {
+  const messages = [
+    '画像生成ツールの安全システムがリクエストを拒否したため、画像を生成できませんでした。依頼の書き換えや再試行は行っていません。',
+    'The image request was rejected by the safety system.',
+  ];
+  for (const message of messages) {
+    const error = generationError(message, 'IMAGE_GENERATION_FAILED');
+    assert.equal(error.category, 'content'); assert.equal(error.code, 'CONTENT_REVIEW');
+    assert.equal(error.autoRetryAllowed, true); assert.equal(publicFailure(error).details, message);
+  }
+  assert.equal(generationError('安全システムの障害か、通信障害かは不明です。').category, 'unknown');
+});
+
 test('再正規化で分類・詳細・慎重な再試行判定を保持し、診断を重複追加しない', () => {
   const error = generationError({ message: 'stream ended unexpectedly', codexErrorInfo: { responseStreamDisconnected: { httpStatusCode: null } }, additionalDetails: 'generation may already have started' });
   error.autoRetryAllowed = false;

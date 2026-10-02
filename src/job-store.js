@@ -5,6 +5,9 @@ import { AppError, safeMessage, validateBatchCount } from './validation.js';
 import { generationError, publicFailure } from './generation-errors.js';
 import { setTimeout as delay } from 'node:timers/promises';
 
+const maxContentAttempts = 3;
+const contentRetryLimitMessage = '3回のリトライ上限に到達しました。';
+
 export class JobStore {
   constructor(directory) { this.directory = directory; this.jobs = new Map(); this.writes = new Map(); }
   async initialize() {
@@ -194,8 +197,8 @@ export class JobManager {
         if (reference.uploadId && !this.uploads) throw new AppError('アップロード画像が見つかりません。', 'UPLOAD_NOT_FOUND', 404);
         return { ...reference, path: await (reference.uploadId ? this.uploads.imagePath(reference.uploadId) : this.store.imagePath(reference.jobId)) };
       }));
-      let image;
-      for (let attempt = 1; attempt <= 4; attempt++) {
+      let image, silentContentRetry = false;
+      for (let attempt = 1; attempt <= maxContentAttempts; attempt++) {
         await this.store.update(id, { attempts: attempt });
         this.assertRunnable(this.store.get(id));
         if (controller.signal.aborted) throw new AppError('生成をキャンセルしました。', 'CANCELLED');
@@ -204,18 +207,20 @@ export class JobManager {
           try {
             image = await this.adapter.generate(this.store.get(id), { workspace: this.store.workspace(id), signal: controller.signal, referenceImages,
               onProgress: message => {
-                if (!acceptingProgress) return;
+                if (!acceptingProgress || silentContentRetry) return;
                 progressWrites = progressWrites.then(() => this.store.update(id, { message: safeMessage(message) })).catch(() => {});
               } });
           } finally { acceptingProgress = false; }
           break;
         } catch (error) {
           const failure = generationError(error);
-          const maxAttempts = failure.category === 'content' ? 4 : 2;
+          const maxAttempts = failure.category === 'content' ? maxContentAttempts : 2;
+          if (failure.category === 'content' && attempt >= maxAttempts && failure.autoRetryAllowed) failure.message = contentRetryLimitMessage;
           if (attempt >= maxAttempts || !failure.retryable || !failure.autoRetryAllowed || controller.signal.aborted) throw failure;
           await progressWrites;
-          const message = failure.category === 'content'
-            ? `内容判定により生成が拒否されたため、同じ入力で再試行します（${attempt}/3回目）。`
+          silentContentRetry ||= failure.category === 'content';
+          const message = silentContentRetry
+            ? '画像を生成しています。数分かかることがあります。'
             : '一時的なエラーのため、同じ入力で1回だけ再試行します。';
           await this.store.update(id, { message });
           await delay(this.retryDelayMs, undefined, { signal: controller.signal });
@@ -227,8 +232,9 @@ export class JobManager {
     } catch (error) {
       await progressWrites;
       const cancelled = controller.signal.aborted || error.code === 'CANCELLED' || error.code === 'NODE_DELETED';
-      await this.store.update(id, { status: cancelled ? 'cancelled' : 'failed', message: cancelled ? '生成をキャンセルしました。' : '画像を生成できませんでした。',
-        error: cancelled ? null : publicFailure(error), finishedAt: new Date().toISOString() });
+      const failure = cancelled ? null : publicFailure(error);
+      await this.store.update(id, { status: cancelled ? 'cancelled' : 'failed', message: cancelled ? '生成をキャンセルしました。' : failure.message,
+        error: failure, finishedAt: new Date().toISOString() });
     }
   }
   async close() {
