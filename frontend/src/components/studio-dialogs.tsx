@@ -1,15 +1,8 @@
 import { useEffect, useState } from "react";
-import {
-  ChevronLeft,
-  ChevronRight,
-  Download,
-  Loader2,
-  RotateCcw,
-  Trash2,
-} from "lucide-react";
+import { Loader2, RotateCcw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { useStudio } from "@/lib/studio-context";
-import { imageTitle, dateLabel, statusLabels } from "@/lib/format";
+import { dateLabel, statusLabels } from "@/lib/format";
 import type { ImageSource } from "@/lib/types";
 import { ApiError } from "@/lib/api";
 import { Button } from "./ui/button";
@@ -21,7 +14,7 @@ import {
   DialogDescription,
   DialogFooter,
 } from "./ui/dialog";
-import { ImageActions } from "./image-actions";
+import { ImageViewer } from "./image-viewer";
 type PlanNode = {
   id: string;
   kind: "job" | "upload";
@@ -141,91 +134,22 @@ export function StudioDialogs({
       setBusy(false);
     }
   };
-  const visible = [...studio.jobs, ...studio.uploads].filter((s) => s.image);
+  const sources = [...studio.jobs, ...studio.uploads];
+  const visible = sources.filter((s) => s.image);
   const current = preview
-    ? visible.find((s) => s.id === preview.id) || preview
+    ? sources.find((s) => s.id === preview.id) || preview
     : null;
   const index = visible.findIndex((s) => s.id === current?.id);
   const previousImage = index > 0 ? visible[index - 1] : null;
   const nextImage = index >= 0 ? visible[index + 1] : null;
   return (
     <>
-      <Dialog
-        open={!!preview}
-        onOpenChange={(open) => {
-          if (!open) onPreview(null);
-        }}
-      >
-        <DialogContent
-          className="flex max-h-[92dvh] w-[calc(100%-2rem)] flex-col sm:max-w-5xl"
-          onKeyDown={(event) => {
-            if (
-              !["ArrowLeft", "ArrowRight"].includes(event.key) ||
-              event.defaultPrevented ||
-              event.altKey ||
-              event.ctrlKey ||
-              event.metaKey ||
-              event.shiftKey ||
-              !(event.target instanceof HTMLElement) ||
-              !event.currentTarget.contains(event.target) ||
-              event.target.closest(
-                'input, textarea, select, [contenteditable]:not([contenteditable="false"])',
-              )
-            )
-              return;
-            event.preventDefault();
-            event.stopPropagation();
-            const adjacent =
-              event.key === "ArrowLeft" ? previousImage : nextImage;
-            if (adjacent) onPreview(adjacent);
-          }}
-        >
-          <DialogHeader>
-            <DialogTitle className="truncate pr-7">
-              {current && imageTitle(current)}
-            </DialogTitle>
-            <DialogDescription>
-              {current && dateLabel(current.createdAt)} · 画像プレビュー
-            </DialogDescription>
-          </DialogHeader>
-          {current && (
-            <>
-              <div className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden rounded-lg bg-muted p-2">
-                <img
-                  src={current.image?.url}
-                  alt={imageTitle(current)}
-                  className="max-h-[62dvh] max-w-full object-contain"
-                />
-                {previousImage && (
-                  <Button
-                    variant="secondary"
-                    size="icon"
-                    className="absolute left-3"
-                    aria-label="前の画像"
-                    onClick={() => onPreview(previousImage)}
-                  >
-                    <ChevronLeft />
-                  </Button>
-                )}
-                {nextImage && (
-                  <Button
-                    variant="secondary"
-                    size="icon"
-                    className="absolute right-3"
-                    aria-label="次の画像"
-                    onClick={() => onPreview(nextImage)}
-                  >
-                    <ChevronRight />
-                  </Button>
-                )}
-              </div>
-              <DialogFooter className="flex-wrap">
-                <ImageActions source={current} compact />
-              </DialogFooter>
-            </>
-          )}
-        </DialogContent>
-      </Dialog>
+      <ImageViewer
+        source={current}
+        previous={previousImage}
+        next={nextImage || null}
+        onSource={onPreview}
+      />
       <Dialog
         open={!!deleting}
         onOpenChange={(open) => {

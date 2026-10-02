@@ -66,7 +66,7 @@ function ImageRelations({
             <button
               key={source.id}
               type="button"
-              onClick={() => studio.select(source.id)}
+              onClick={() => studio.openPreview(source)}
               className="group min-w-0 rounded-lg border bg-muted/30 p-1 text-left transition-colors hover:border-foreground/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               aria-label={`${imageTitle(source)}の詳細を見る`}
             >
@@ -103,10 +103,12 @@ export function ImageInspector({
   source,
   mode = "history",
   onClose,
+  showPreview = true,
 }: {
   source: ImageSource;
   mode?: "history" | "lineage";
   onClose?: () => void;
+  showPreview?: boolean;
 }) {
   const studio = useStudio();
   const id = useId();
@@ -225,37 +227,39 @@ export function ImageInspector({
         )}
       </div>
       <div className="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain p-5">
-        <button
-          type="button"
-          className="group relative flex aspect-[3/2] w-full items-center justify-center overflow-hidden rounded-xl border bg-muted/50 disabled:cursor-default focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          onClick={() => studio.openPreview(source)}
-          disabled={!source.image}
-          aria-label="画像を拡大プレビュー"
-        >
-          {source.image ? (
-            <>
-              <img
-                src={source.image.url}
-                alt={title}
-                className="size-full object-contain"
-              />
-              <span className="absolute bottom-2 right-2 rounded-md bg-background/90 p-2 opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
-                <Expand className="size-4" />
-              </span>
-            </>
-          ) : (
-            <div className="space-y-3 p-5 text-center text-muted-foreground">
-              {active ? (
-                <LoaderCircle className="mx-auto size-8 animate-spin" />
-              ) : (
-                <ImageIcon className="mx-auto size-8" />
-              )}
-              <p className="text-sm">
-                {statusLabels[source.status] || source.status}
-              </p>
-            </div>
-          )}
-        </button>
+        {showPreview && (
+          <button
+            type="button"
+            className="group relative flex aspect-[3/2] w-full items-center justify-center overflow-hidden rounded-xl border bg-muted/50 disabled:cursor-default focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            onClick={() => studio.openPreview(source)}
+            disabled={!source.image}
+            aria-label="画像を拡大プレビュー"
+          >
+            {source.image ? (
+              <>
+                <img
+                  src={source.image.url}
+                  alt={title}
+                  className="size-full object-contain"
+                />
+                <span className="absolute bottom-2 right-2 rounded-md bg-background/90 p-2 opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
+                  <Expand className="size-4" />
+                </span>
+              </>
+            ) : (
+              <div className="space-y-3 p-5 text-center text-muted-foreground">
+                {active ? (
+                  <LoaderCircle className="mx-auto size-8 animate-spin" />
+                ) : (
+                  <ImageIcon className="mx-auto size-8" />
+                )}
+                <p className="text-sm">
+                  {statusLabels[source.status] || source.status}
+                </p>
+              </div>
+            )}
+          </button>
+        )}
         <div className="space-y-2">
           <h3 className="break-words text-lg font-semibold leading-snug">
             {title}

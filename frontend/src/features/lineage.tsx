@@ -40,14 +40,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
-import { ImageInspector } from "@/components/image-inspector";
 import { dateLabel, statusLabels } from "@/lib/format";
 import { useStudio } from "@/lib/studio-context";
 import type { ImageSource } from "@/lib/types";
@@ -240,19 +232,6 @@ function BatchNode({ data }: NodeProps<FlowBatchNode>) {
 const nodeTypes = { image: ImageNode, batch: BatchNode };
 const allValue = "__all__";
 
-function useWideScreen() {
-  const [wide, setWide] = useState(
-    () => window.matchMedia("(min-width: 1024px)").matches,
-  );
-  useEffect(() => {
-    const query = window.matchMedia("(min-width: 1024px)");
-    const update = () => setWide(query.matches);
-    query.addEventListener("change", update);
-    return () => query.removeEventListener("change", update);
-  }, []);
-  return wide;
-}
-
 function FilterSelect({
   label,
   value,
@@ -289,7 +268,6 @@ function FilterSelect({
 
 export function LineageView() {
   const studio = useStudio();
-  const wide = useWideScreen();
   const [query, setQuery] = useState("");
   const [branchId, setBranchId] = useState("");
   const [componentId, setComponentId] = useState("");
@@ -319,7 +297,6 @@ export function LineageView() {
     () => layoutLineageGraph(graph, visible) as GraphLayout,
     [graph, visible],
   );
-  const selectedSource = graph.nodeMap.get(studio.selectedId || "")?.job;
   const filters = [branchId, componentId, studio.graphBatchId].filter(
     Boolean,
   ).length;
@@ -458,7 +435,8 @@ export function LineageView() {
     );
     if (node && (event.key === "Enter" || event.key === " ")) {
       event.preventDefault();
-      studio.select(node.dataset.id || null);
+      const source = graph.nodeMap.get(node.dataset.id || "")?.job;
+      if (source) studio.openPreview(source);
       return;
     }
     if (node && event.key === "Escape") {
@@ -493,7 +471,10 @@ export function LineageView() {
   }
 
   return (
-    <section className="flex min-h-full flex-col lg:h-full lg:min-h-0" aria-label="画像の系統図">
+    <section
+      className="flex min-h-full flex-col lg:h-full lg:min-h-0"
+      aria-label="画像の系統図"
+    >
       <div className="shrink-0 border-b bg-white px-5 py-5 lg:px-7">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
@@ -671,10 +652,7 @@ export function LineageView() {
               nodeTypes={nodeTypes}
               onInit={setFlow}
               onNodeClick={(_, node) => {
-                if (node.type === "image") studio.select(node.id);
-              }}
-              onNodeDoubleClick={(_, node) => {
-                if (node.type === "image" && node.data.value.job.image)
+                if (node.type === "image")
                   studio.openPreview(node.data.value.job);
               }}
               onMove={(_, viewport) => setZoom(Math.round(viewport.zoom * 100))}
@@ -805,56 +783,7 @@ export function LineageView() {
             </div>
           )}
         </div>
-        {wide && (
-          <aside
-            className="min-h-0 w-[336px] shrink-0 overflow-hidden border-l bg-white"
-            aria-label="選択した画像の詳細"
-          >
-            {selectedSource ? (
-              <ImageInspector
-                source={selectedSource}
-                mode="lineage"
-                onClose={() => studio.select(null)}
-              />
-            ) : (
-              <div className="p-5">
-                <h2 className="font-semibold">選択した画像</h2>
-                <p className="mt-3 text-sm leading-relaxed text-zinc-500">
-                  画像を選択すると、生成時の入力や参照のつながりを確認できます。
-                </p>
-              </div>
-            )}
-          </aside>
-        )}
       </div>
-      {!wide && (
-        <Sheet
-          open={Boolean(selectedSource) && studio.view === "lineage"}
-          onOpenChange={(open) => {
-            if (!open) studio.select(null);
-          }}
-        >
-          <SheetContent
-            side="right"
-            className="w-full gap-0 p-0 sm:max-w-md"
-            showCloseButton={false}
-          >
-            <SheetHeader className="sr-only">
-              <SheetTitle>選択した画像の詳細</SheetTitle>
-              <SheetDescription>
-                選択した画像のプレビュー、操作、生成時の設定と参照のつながり
-              </SheetDescription>
-            </SheetHeader>
-            {selectedSource && (
-              <ImageInspector
-                source={selectedSource}
-                mode="lineage"
-                onClose={() => studio.select(null)}
-              />
-            )}
-          </SheetContent>
-        </Sheet>
-      )}
     </section>
   );
 }
