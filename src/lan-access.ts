@@ -90,6 +90,9 @@ async function form(request: IncomingMessage) {
   return new URLSearchParams(Buffer.concat(chunks).toString('utf8'));
 }
 function page(response: ServerResponse, nonce: string, title: string, body: string) {
+  // Native form POSTs send Origin: null under no-referrer. Keep same-origin
+  // submissions identifiable while still omitting referrers to other sites.
+  response.setHeader('Referrer-Policy', 'same-origin');
   response.setHeader('Content-Type', 'text/html; charset=utf-8');
   response.end(`<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title} | Codex Image Studio</title><style nonce="${nonce}">body{font:16px/1.65 system-ui,sans-serif;color:#18181b;background:#fafafa;margin:0;padding:24px}main{max-width:480px;margin:40px auto;padding:24px;background:white;border:1px solid #ddd;border-radius:16px}h1{font-size:24px}a{color:#1d4ed8;overflow-wrap:anywhere}input,button{box-sizing:border-box;font:inherit;width:100%;padding:12px;margin:8px 0;border:1px solid #aaa;border-radius:8px}button{background:#18181b;color:white;cursor:pointer}strong{font:700 36px monospace;letter-spacing:4px}label{display:block}</style></head><body><main><h1>${title}</h1>${body}</main></body></html>`);
 }
