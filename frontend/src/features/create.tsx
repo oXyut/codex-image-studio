@@ -26,7 +26,6 @@ import { batchVisibility } from "@legacy/deletion-ui.js";
 import { canvasSizeLabel } from "@legacy/canvas-options.js";
 import {
   dateLabel,
-  errorMessage,
   imageTitle,
   statusLabels,
   styleLabels,
@@ -63,6 +62,8 @@ import {
 import { TemplatePicker } from "./templates";
 import { ReferencePicker } from "@/components/reference-picker";
 import { ImageActions, ImageContextMenu } from "@/components/image-actions";
+import { GenerationRecovery } from "@/components/generation-recovery";
+import { cn } from "@/lib/utils";
 const examples = [
   "朝のやわらかな光が差し込む、静かな森。木々の間に薄い霧が漂う。自然な写真の質感。",
   "白い背景に置いた、シンプルなガラスの香水ボトル。やわらかな影、スタジオ撮影。",
@@ -620,8 +621,13 @@ export function CreateView({
                 <ImageContextMenu source={source}>
                   <div
                     tabIndex={0}
-                    aria-label="生成結果の画像"
-                    className="relative flex min-h-0 aspect-[3/2] w-full max-w-4xl items-center justify-center overflow-hidden rounded-lg border bg-white shadow-sm"
+                    aria-label={source.image ? "生成結果の画像" : "生成の状態"}
+                    className={cn(
+                      "relative flex min-h-0 w-full max-w-4xl rounded-lg border bg-white shadow-sm",
+                      source.image
+                        ? "aspect-[3/2] items-center justify-center overflow-hidden"
+                        : "shrink-0 p-5 sm:p-6",
+                    )}
                   >
                     {source.image ? (
                       <>
@@ -640,76 +646,27 @@ export function CreateView({
                           <Maximize2 />
                         </Button>
                       </>
-                    ) : (
-                      <div role="status" className="max-w-md p-7 text-center">
-                        {["queued", "running"].includes(source.status) ? (
-                          <>
-                            <Loader2 className="mx-auto mb-4 size-8 animate-spin text-muted-foreground" />
-                            <p className="text-lg font-medium">
-                              {statusLabels[source.status]}
-                            </p>
-                            <p className="mt-2 text-sm text-muted-foreground">
-                              生成中もプロンプトを編集したり、ほかの画面を確認できます。
-                            </p>
-                            <Button
-                              variant="outline"
-                              className="mt-5"
-                              onClick={() =>
-                                void studio.run(() => studio.cancel(source))
-                              }
-                            >
-                              生成を停止
-                            </Button>
-                          </>
-                        ) : (
-                          <>
-                            <p className="font-medium">
-                              {statusLabels[source.status]}
-                            </p>
-                            <p className="mt-3 text-sm text-destructive">
-                              {source.status === "cancelled"
-                                ? "生成をキャンセルしました。入力は保持されています。"
-                                : errorMessage(source)}
-                            </p>
-                            {source.error != null &&
-                              typeof source.error === "object" &&
-                              typeof source.error.advice === "string" && (
-                                <p className="mt-2 text-sm text-muted-foreground">
-                                  {source.error.advice}
-                                </p>
-                              )}
-                            {(source.errorDetails ||
-                              (source.error != null &&
-                                typeof source.error === "object" &&
-                                source.error.details)) && (
-                              <details className="mt-3 rounded-lg border p-3 text-left text-xs">
-                                <summary className="cursor-pointer font-medium">
-                                  エラーの詳細
-                                </summary>
-                                <pre className="mt-2 whitespace-pre-wrap break-words">
-                                  {source.error != null &&
-                                  typeof source.error === "object"
-                                    ? source.error.code
-                                    : ""}
-                                  {"\n"}
-                                  {source.errorDetails ||
-                                    (source.error != null &&
-                                    typeof source.error === "object"
-                                      ? source.error.details
-                                      : "")}
-                                </pre>
-                              </details>
-                            )}
-                            <Button
-                              className="mt-4"
-                              onClick={() => studio.replaceFromSource(source)}
-                            >
-                              内容を編集して再試行
-                            </Button>
-                            <ImageActions source={source} />
-                          </>
-                        )}
+                    ) : ["queued", "running"].includes(source.status) ? (
+                      <div role="status" className="w-full py-7 text-center">
+                        <Loader2 className="mx-auto mb-4 size-8 animate-spin text-muted-foreground" />
+                        <p className="text-lg font-medium">
+                          {statusLabels[source.status]}
+                        </p>
+                        <p className="mt-2 text-sm text-muted-foreground">
+                          生成中もプロンプトを編集したり、ほかの画面を確認できます。
+                        </p>
+                        <Button
+                          variant="outline"
+                          className="mt-5"
+                          onClick={() =>
+                            void studio.run(() => studio.cancel(source))
+                          }
+                        >
+                          生成を停止
+                        </Button>
                       </div>
+                    ) : (
+                      <GenerationRecovery key={source.id} source={source} />
                     )}
                   </div>
                 </ImageContextMenu>
