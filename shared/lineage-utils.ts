@@ -19,11 +19,17 @@ export type LineageGraph<T extends GraphImage = ImageSource> = {
 export type VisibleGraph<T extends GraphImage = ImageSource> = {
   nodes: LineageNode<T>[]; edges: LineageEdge[]; matchIds: Set<string>; visibleIds: Set<string>; filtered: boolean;
 };
-export type GraphPosition = { x: number; y: number; width: number; height: number; level: number };
+export type GraphPosition = { x: number; y: number; width: number; height: number; level: number; compact?: boolean };
+export type BatchGroup = {
+  id: string; nodeIds: string[]; x: number; y: number; width: number; height: number;
+  count: number; visibleCount: number; deletedCount: number; compact: boolean;
+};
+type LayoutOptions = { compactBatches?: boolean; expandedBatchIds?: ReadonlySet<string>; cardHeight?: number };
 export type GraphLayout = ReturnType<typeof layoutLineageGraph>;
 export const lineageOperationNames: Record<string, string> = { generate: '新規生成', derive: '参照から生成', edit: '入力を編集', regenerate: '再生成', upload: '参照の起点' };
 export const lineageStatusNames: Record<string, string> = { queued: '待機中', running: '生成中', succeeded: '完成', failed: 'エラー', cancelled: 'キャンセル', uploaded: 'アップロード' };
 export const graphGeometry = { cardWidth: 184, cardHeight: 168, columnGap: 94, rowGap: 38, padding: 28, componentGap: 56 };
+export const compactBatchGeometry = { cardWidth: 128, cardHeight: 140, gap: 12, padding: 12, headerHeight: 56, footerHeight: 52 };
 
 const text = (value: unknown) => typeof value === 'string' ? value : '';
 const unique = <T>(values: T[]): T[] => [...new Set(values)];
@@ -125,9 +131,14 @@ export function filterLineageGraph<T extends GraphImage>(graph: LineageGraph<T>,
   return { nodes: graph.nodes.filter(value => visibleIds.has(value.id)), edges: graph.edges.filter(edge => visibleIds.has(edge.from) && visibleIds.has(edge.to)), matchIds, visibleIds, filtered: Boolean(terms.length || branchId || componentId || batchId) };
 }
 
-export function layoutLineageGraph<T extends GraphImage>(graph: LineageGraph<T>, visible = filterLineageGraph(graph)) {
-  const { cardWidth, cardHeight, columnGap, rowGap, padding, componentGap } = graphGeometry;
-  const positions = new Map<string, GraphPosition>(), groups: { id: string; componentIds: string[]; top: number; height: number }[] = [], batchGroups: { id: string; nodeIds: string[]; x: number; y: number; width: number; height: number; count: number; visibleCount: number; deletedCount: number }[] = [];
+export function layoutLineageGraph<T extends GraphImage>(graph: LineageGraph<T>, visible = filterLineageGraph(graph), options: LayoutOptions = {}) {
+  const { cardWidth, columnGap, rowGap, padding, componentGap } = graphGeometry;
+  const cardHeight = options.cardHeight ?? graphGeometry.cardHeight;
+  const positions = new Map<string, GraphPosition>(), groups: { id: string; componentIds: string[]; top: number; height: number }[] = [], batchGroups: BatchGroup[] = [];
+  const isCompact = (unit: LineageNode<T>[]) => Boolean(options.compactBatches && unit[0].batchId && !options.expandedBatchIds?.has(unit[0].batchId));
+  const unitWidth = (unit: LineageNode<T>[]) => isCompact(unit)
+    ? Math.min(2, unit.length) * compactBatchGeometry.cardWidth + (unit.length > 1 ? compactBatchGeometry.gap : 0) + compactBatchGeometry.padding * 2
+    : cardWidth + (unit[0].batchId ? 20 : 0);
   // Batch peers share a display block. They remain separate ancestry components and gain no edges.
   const displayParents = new Map(graph.components.map(component => [component.id, component.id]));
   const displayRoot = (id: string) => { let root = id; while (displayParents.get(root)! !== root) root = displayParents.get(root)!; return root; };
@@ -137,34 +148,78 @@ export function layoutLineageGraph<T extends GraphImage>(graph: LineageGraph<T>,
   }
   const displayBlocks = new Map<string, string[]>();
   for (const component of graph.components) { const root = displayRoot(component.id); if (!displayBlocks.has(root)) displayBlocks.set(root, []); displayBlocks.get(root)!.push(component.id); }
-  let top = padding, maxLevel = 0;
+  let top = padding, right = padding;
   for (const [displayId, componentIds] of displayBlocks) {
     const members = visible.nodes.filter(value => componentIds.includes(value.componentId)); if (!members.length) continue;
     const minLevel = Math.min(...members.map(value => value.level));
-    const columns = new Map<number, LineageNode<T>[]>();
-    for (const value of members) { const level = value.level - minLevel; if (!columns.has(level)) columns.set(level, []); columns.get(level)!.push(value); maxLevel = Math.max(maxLevel, level); }
-    let height = 0;
-    for (const [level, values] of [...columns].sort(([a], [b]) => a - b)) {
+    const columns = new Map<number, Map<string, LineageNode<T>[]>>();
+    for (const value of members) {
+      const level = value.level - minLevel;
+      if (!columns.has(level)) columns.set(level, new Map());
+      const units = columns.get(level)!;
+      const id = value.batchId ? `batch:${value.batchId}` : `node:${value.id}`;
+      if (!units.has(id)) units.set(id, []);
+      units.get(id)!.push(value);
+    }
+    let height = 0, x = padding;
+    for (const [level, units] of [...columns].sort(([a], [b]) => a - b)) {
       const average = (value: LineageNode<T>) => { const parents = value.dependencies.map(id => positions.get(id)).filter((point): point is GraphPosition => Boolean(point)); return parents.length ? parents.reduce((total, point) => total + point.y, 0) / parents.length : top; };
-      const units = new Map<string, LineageNode<T>[]>();
-      for (const value of values) { const id = value.batchId ? `batch:${value.batchId}` : `node:${value.id}`; if (!units.has(id)) units.set(id, []); units.get(id)!.push(value); }
       const unitAverage = (unit: LineageNode<T>[]) => unit.reduce((total, value) => total + average(value), 0) / unit.length;
       const ordered = [...units.values()].sort((a, b) => unitAverage(a) - unitAverage(b) || chronology(a[0], b[0]));
       let offset = 0;
       for (const unit of ordered) {
-        if (unit[0].batchId) { unit.sort(batchOrder); offset += 36; }
-        const firstY = top + offset, x = padding + level * (cardWidth + columnGap);
-        for (const value of unit) { positions.set(value.id, { x, y: top + offset, width: cardWidth, height: cardHeight, level }); offset += cardHeight + rowGap; }
+        const y = top + offset;
         if (unit[0].batchId) {
+          unit.sort(batchOrder);
+          const compact = isCompact(unit), columns = compact ? Math.min(2, unit.length) : 1;
+          const width = compact ? compactBatchGeometry.cardWidth : cardWidth;
+          const height = compact ? compactBatchGeometry.cardHeight : cardHeight;
+          const gap = compact ? compactBatchGeometry.gap : rowGap;
+          const inset = compact ? compactBatchGeometry.padding : 10;
+          const header = compactBatchGeometry.headerHeight;
+          const footer = options.compactBatches ? compactBatchGeometry.footerHeight : 10;
+          const rows = Math.ceil(unit.length / columns);
+          const groupHeight = header + rows * height + (rows - 1) * gap + footer;
+          for (const [index, value] of unit.entries()) positions.set(value.id, {
+            x: x + inset + (index % columns) * (width + gap), y: y + header + Math.floor(index / columns) * (height + gap),
+            width, height, level, ...(compact ? { compact: true } : {}),
+          });
           const batch = graph.batchMap.get(unit[0].batchId)!;
-          batchGroups.push({ id: batch.id, nodeIds: unit.map(value => value.id), x: x - 10, y: firstY - 34, width: cardWidth + 20, height: unit.length * (cardHeight + rowGap) - rowGap + 44, count: batch.count, visibleCount: batch.nodeIds.filter(id => visible.visibleIds.has(id)).length, deletedCount: batch.deletedCount });
+          batchGroups.push({ id: batch.id, nodeIds: unit.map(value => value.id), x, y, width: unitWidth(unit), height: groupHeight, count: batch.count, visibleCount: batch.nodeIds.filter(id => visible.visibleIds.has(id)).length, deletedCount: batch.deletedCount, compact });
+          offset += groupHeight + rowGap;
+        } else {
+          positions.set(unit[0].id, { x, y, width: cardWidth, height: cardHeight, level });
+          offset += cardHeight + rowGap;
         }
       }
-      height = Math.max(height, offset - rowGap + (values.some(value => value.batchId) ? 10 : 0));
+      height = Math.max(height, offset - rowGap);
+      const columnWidth = Math.max(...ordered.map(unitWidth));
+      right = Math.max(right, x + columnWidth);
+      x += columnWidth + columnGap;
     }
     groups.push({ id: displayId, componentIds, top, height }); top += height + componentGap;
   }
-  return { positions, groups, batchGroups, width: Math.max(480, padding * 2 + maxLevel * (cardWidth + columnGap) + cardWidth), height: Math.max(280, top - componentGap + padding), ...graphGeometry };
+  return { ...graphGeometry, cardHeight, positions, groups, batchGroups, width: Math.max(480, right + padding), height: Math.max(280, top - componentGap + padding) };
+}
+
+// Route connections through grid gutters, so a left-column image never draws a
+// derivation through its right-hand peer and a right-column target stays identifiable.
+export function lineageBatchEdgePath(from: GraphPosition, to: GraphPosition, sourceGroup?: BatchGroup, targetGroup?: BatchGroup) {
+  const start = { x: from.x + from.width, y: from.y + from.height / 2 };
+  const end = { x: to.x, y: to.y + to.height / 2 };
+  const halfGap = compactBatchGeometry.gap / 2;
+  let source = start, target = end;
+  let prefix = `M ${start.x} ${start.y}`, suffix = '';
+  if (sourceGroup?.compact && start.x < sourceGroup.x + sourceGroup.width - compactBatchGeometry.padding) {
+    source = { x: sourceGroup.x + sourceGroup.width + halfGap, y: from.y + from.height + halfGap };
+    prefix += ` L ${start.x + halfGap} ${start.y} L ${start.x + halfGap} ${source.y} L ${source.x} ${source.y}`;
+  }
+  if (targetGroup?.compact && to.x > targetGroup.x + compactBatchGeometry.padding) {
+    target = { x: targetGroup.x - halfGap, y: to.y - halfGap };
+    suffix = ` L ${end.x - halfGap} ${target.y} L ${end.x - halfGap} ${end.y} L ${end.x} ${end.y}`;
+  }
+  const bend = Math.max(12, (target.x - source.x) / 2);
+  return `${prefix} C ${source.x + bend} ${source.y}, ${target.x - bend} ${target.y}, ${target.x} ${target.y}${suffix}`;
 }
 
 export function lineageEdgePath(from: { x: number; y: number }, to: { x: number; y: number }, geometry = graphGeometry) {

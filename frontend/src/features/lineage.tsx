@@ -10,19 +10,23 @@ import { useStudio } from "@/lib/studio-context";
 import { cn } from "@/lib/utils";
 import {
   buildLineageGraph,
+  compactBatchGeometry,
   filterLineageGraph,
   layoutLineageGraph,
+  lineageBatchEdgePath,
   lineageBatchLabel,
   lineageTitle,
 } from "@shared/lineage-utils.js";
 import {
   Background,
   BackgroundVariant,
+  BaseEdge,
   Handle,
   MarkerType,
   Position,
   ReactFlow,
   type Edge,
+  type EdgeProps,
   type Node,
   type NodeProps,
   type ReactFlowInstance,
@@ -48,12 +52,17 @@ type ImageNodeData = {
   value: LineageNode;
   ancestor: boolean;
   selected: boolean;
+  compact: boolean;
 };
 type BatchNodeData = {
   count: number;
   visibleCount: number;
   deletedCount: number;
   batchId: string;
+  title: string;
+  nodeCount: number;
+  compact: boolean;
+  onToggle?: () => void;
 };
 type FlowImageNode = Node<ImageNodeData, "image">;
 type FlowBatchNode = Node<BatchNodeData, "batch">;
@@ -62,7 +71,7 @@ type FlowNode = FlowImageNode | FlowBatchNode;
 const cardHeight = 200;
 
 function ImageNode({ data }: NodeProps<FlowImageNode>) {
-  const { value, ancestor, selected } = data;
+  const { value, ancestor, selected, compact } = data;
   const title = lineageTitle(value);
   const status =
     value.kind === "upload"
@@ -74,12 +83,17 @@ function ImageNode({ data }: NodeProps<FlowImageNode>) {
     <ImageContextMenu source={value.job}>
       <div
         className={cn(
-          "relative h-[200px] w-[184px] rounded-xl border bg-white p-2 shadow-sm transition-colors",
+          "relative rounded-xl border bg-white shadow-sm transition-colors",
+          compact ? "p-1.5" : "p-2",
           selected
             ? "border-zinc-900 ring-2 ring-zinc-900/10"
             : "border-zinc-200 hover:border-zinc-400",
           ancestor && "bg-zinc-50",
         )}
+        style={{
+          width: compact ? compactBatchGeometry.cardWidth : 184,
+          height: compact ? compactBatchGeometry.cardHeight : cardHeight,
+        }}
         title={`${title}\n${status} · ${dateLabel(value.createdAt)}${ancestor ? "\n絞り込み対象の元画像" : ""}`}
       >
         <Handle
@@ -87,7 +101,7 @@ function ImageNode({ data }: NodeProps<FlowImageNode>) {
           position={Position.Left}
           className="!size-1 !border-0 !bg-zinc-500 !opacity-0"
         />
-        <div className="relative flex h-32 items-center justify-center overflow-hidden rounded-lg bg-zinc-100">
+        <div className={cn("relative flex items-center justify-center overflow-hidden rounded-lg bg-zinc-100", compact ? "h-[84px]" : "h-32")}>
           {value.job.image?.url ? (
             <img
               src={value.job.image.url}
@@ -106,6 +120,11 @@ function ImageNode({ data }: NodeProps<FlowImageNode>) {
               <span className="text-sm">{status}</span>
             </div>
           )}
+          {compact && value.job.batch && (
+            <span className="absolute left-1.5 top-1.5 min-w-5 rounded bg-white/95 px-1 text-center text-xs font-semibold leading-5 text-zinc-900">
+              {value.job.batch.index}
+            </span>
+          )}
           {selected && (
             <span className="absolute right-2 top-2 flex size-6 items-center justify-center rounded-full bg-zinc-900 text-white ring-2 ring-white">
               <Check className="size-4" />
@@ -120,10 +139,10 @@ function ImageNode({ data }: NodeProps<FlowImageNode>) {
             </span>
           )}
         </div>
-        <p className="mt-2 truncate text-sm font-semibold leading-5 text-zinc-900">
+        <p className={cn("truncate font-semibold text-zinc-900", compact ? "mt-1 text-xs leading-4" : "mt-2 text-sm leading-5")}>
           {title}
         </p>
-        <p className="mt-1 flex items-center gap-1.5 text-sm leading-5 text-zinc-500">
+        <p className={cn("flex items-center gap-1.5 text-zinc-500", compact ? "mt-0.5 text-xs leading-4" : "mt-1 text-sm leading-5")}>
           <span
             className={cn(
               "size-1.5 shrink-0 rounded-full",
@@ -135,7 +154,7 @@ function ImageNode({ data }: NodeProps<FlowImageNode>) {
             )}
           />
           {status}
-          {value.job.batch && (
+          {!compact && value.job.batch && (
             <span>
               · {value.job.batch.index}/{value.job.batch.count}
             </span>
@@ -154,18 +173,42 @@ function ImageNode({ data }: NodeProps<FlowImageNode>) {
 function BatchNode({ data }: NodeProps<FlowBatchNode>) {
   return (
     <div
-      className="h-full w-full rounded-xl border border-dashed border-indigo-200 bg-indigo-50/45 px-3 py-2"
+      className="relative h-full w-full rounded-xl border border-dashed border-indigo-200 bg-indigo-50/45 px-3 py-2"
       title={`${lineageBatchLabel(data.batchId)} · 表示 ${data.visibleCount} / 全 ${data.count}${data.deletedCount ? ` · 削除 ${data.deletedCount}` : ""}。同時作成は参照・親子関係とは別のグループです。`}
     >
       <p className="flex items-center gap-2 whitespace-nowrap text-sm font-medium text-zinc-600">
         <span className="size-4 rounded border border-indigo-200 bg-white/80" />
         同時作成 · {data.count}枚
       </p>
+      <p className="mt-1 truncate text-xs leading-4 text-zinc-500">
+        {data.visibleCount < data.count
+          ? `表示 ${data.visibleCount} / ${data.count}枚${data.deletedCount ? ` · 削除 ${data.deletedCount}枚` : ""}`
+          : data.title}
+      </p>
+      {data.onToggle && (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="nodrag nopan pointer-events-auto absolute bottom-2 left-3 right-3 h-7 text-indigo-700 hover:bg-indigo-100/60"
+          aria-label={`${lineageBatchLabel(data.batchId)}を${data.compact ? "展開" : "まとめて表示"}`}
+          aria-expanded={!data.compact}
+          onClick={(event) => {
+            event.stopPropagation();
+            data.onToggle?.();
+          }}
+        >
+          {data.compact ? `${data.nodeCount}枚を展開` : "まとめる"}
+        </Button>
+      )}
     </div>
   );
 }
 
 const nodeTypes = { image: ImageNode, batch: BatchNode };
+function BatchEdge({ id, data, style, markerEnd }: EdgeProps<Edge<{ path: string }>>) {
+  return <BaseEdge id={id} path={data?.path ?? ""} style={style} markerEnd={markerEnd} interactionWidth={0} />;
+}
+const edgeTypes = { batch: BatchEdge };
 const allValue = "__all__";
 
 function FilterSelect({
@@ -207,6 +250,8 @@ export function LineageView() {
   const [query, setQuery] = useState("");
   const [branchId, setBranchId] = useState("");
   const [componentId, setComponentId] = useState("");
+  const [compactBatches, setCompactBatches] = useState(true);
+  const [expandedBatchIds, setExpandedBatchIds] = useState<Set<string>>(() => new Set());
   const [zoom, setZoom] = useState(100);
   const [flow, setFlow] = useState<ReactFlowInstance<FlowNode, Edge> | null>(
     null,
@@ -230,8 +275,8 @@ export function LineageView() {
     [graph, query, branchId, componentId, studio.graphBatchId],
   );
   const layout = useMemo(
-    () => layoutLineageGraph(graph, visible),
-    [graph, visible],
+    () => layoutLineageGraph(graph, visible, { compactBatches, expandedBatchIds, cardHeight }),
+    [graph, visible, compactBatches, expandedBatchIds],
   );
   const filters = [branchId, componentId, studio.graphBatchId].filter(
     Boolean,
@@ -248,24 +293,33 @@ export function LineageView() {
     branchId,
     componentId,
     studio.graphBatchId,
+    compactBatches,
+    [...expandedBatchIds].sort(),
   ]);
 
   const flowNodes = useMemo<FlowNode[]>(() => {
-    const scale = cardHeight / layout.cardHeight;
     return [
       ...layout.batchGroups.map((group, index): FlowBatchNode => ({
         id: `batch:${group.id}:${index}`,
         type: "batch",
-        position: { x: group.x, y: group.y * scale },
+        position: { x: group.x, y: group.y },
         data: {
           count: group.count,
           visibleCount: group.visibleCount,
           deletedCount: group.deletedCount,
           batchId: group.id,
+          title: lineageTitle(graph.nodeMap.get(group.nodeIds[0])),
+          nodeCount: group.nodeIds.length,
+          compact: group.compact,
+          onToggle: compactBatches ? () => setExpandedBatchIds((current) => {
+            const next = new Set(current);
+            if (next.has(group.id)) next.delete(group.id); else next.add(group.id);
+            return next;
+          }) : undefined,
         },
         style: {
           width: group.width,
-          height: group.height * scale,
+          height: group.height,
           pointerEvents: "none",
         },
         selectable: false,
@@ -278,28 +332,31 @@ export function LineageView() {
         return {
           id: value.id,
           type: "image",
-          position: { x: point.x, y: point.y * scale },
+          position: { x: point.x, y: point.y },
           data: {
             value,
             ancestor: visible.filtered && !visible.matchIds.has(value.id),
             selected: value.id === studio.selectedId,
+            compact: Boolean(point.compact),
           },
           selected: value.id === studio.selectedId,
-          style: { width: 184, height: cardHeight },
+          style: { width: point.width, height: point.height },
           draggable: false,
           zIndex: 2,
           ariaLabel: `${lineageTitle(value)}、${value.kind === "upload" ? "アップロードした参照の起点" : statusLabels[value.job.status] || value.job.status}${value.job.batch ? `、同時作成 ${value.job.batch.index}件目` : ""}`,
         };
       }),
     ];
-  }, [layout, visible, studio.selectedId]);
+  }, [layout, visible, graph, studio.selectedId, compactBatches]);
   const flowEdges = useMemo<Edge[]>(
-    () =>
-      visible.edges.map((edge, index) => ({
+    () => {
+      const batchByNode = new Map(layout.batchGroups.flatMap((group) => group.nodeIds.map((id) => [id, group] as const)));
+      return visible.edges.map((edge, index) => ({
         id: `${edge.kind}:${edge.from}:${edge.to}:${index}`,
         source: edge.from,
         target: edge.to,
-        type: "default",
+        type: "batch",
+        data: { path: lineageBatchEdgePath(layout.positions.get(edge.from)!, layout.positions.get(edge.to)!, batchByNode.get(edge.from), batchByNode.get(edge.to)) },
         zIndex: 1,
         selectable: false,
         focusable: false,
@@ -315,8 +372,9 @@ export function LineageView() {
           ...(edge.kind === "source" ? { strokeDasharray: "6 5" } : {}),
         },
         ariaLabel: `${lineageTitle(graph.nodeMap.get(edge.from))}から${lineageTitle(graph.nodeMap.get(edge.to))}への${edge.label}`,
-      })),
-    [visible.edges, graph, studio.selectedId],
+      }));
+    },
+    [visible.edges, graph, layout, studio.selectedId],
   );
 
   useEffect(() => {
@@ -426,30 +484,49 @@ export function LineageView() {
               {uploads > 0 && ` · アップロード ${uploads}枚`}
             </p>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={!graph.nodes.length}
-            onClick={() => {
-              const newest =
-                graph.nodes.filter((value) => value.kind !== "upload").at(-1) ||
-                graph.nodes.at(-1);
-              if (!newest) return;
-              resetFilters();
-              studio.select(newest.id);
-              requestAnimationFrame(
-                () =>
-                  void flow?.fitView({
-                    nodes: [{ id: newest.id }],
-                    maxZoom: 1.2,
-                    padding: 0.35,
-                    duration: 300,
-                  }),
-              );
-            }}
-          >
-            最新の画像へ
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <div role="group" aria-label="同時作成の表示方法" className="flex rounded-lg border bg-zinc-50 p-0.5">
+              {[{ label: "個別表示", compact: false }, { label: "まとめて表示", compact: true }].map((mode) => (
+                <Button
+                  key={mode.label}
+                  variant="ghost"
+                  size="sm"
+                  aria-pressed={compactBatches === mode.compact}
+                  className={cn("h-8 px-3", compactBatches === mode.compact && "bg-indigo-50 text-indigo-800 hover:bg-indigo-100")}
+                  onClick={() => {
+                    setCompactBatches(mode.compact);
+                    setExpandedBatchIds(new Set());
+                  }}
+                >
+                  {mode.label}
+                </Button>
+              ))}
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={!graph.nodes.length}
+              onClick={() => {
+                const newest =
+                  graph.nodes.filter((value) => value.kind !== "upload").at(-1) ||
+                  graph.nodes.at(-1);
+                if (!newest) return;
+                resetFilters();
+                studio.select(newest.id);
+                requestAnimationFrame(
+                  () =>
+                    void flow?.fitView({
+                      nodes: [{ id: newest.id }],
+                      maxZoom: 1.2,
+                      padding: 0.35,
+                      duration: 300,
+                    }),
+                );
+              }}
+            >
+              最新の画像へ
+            </Button>
+          </div>
         </div>
       </div>
       <div className="flex shrink-0 flex-col lg:min-h-0 lg:flex-1 lg:flex-row">
@@ -590,6 +667,7 @@ export function LineageView() {
               nodes={flowNodes}
               edges={flowEdges}
               nodeTypes={nodeTypes}
+              edgeTypes={edgeTypes}
               onInit={setFlow}
               onNodeClick={(_, node) => {
                 if (node.type === "image")
@@ -647,8 +725,8 @@ export function LineageView() {
                 </div>
               </div>
             )}
-            <div className="absolute bottom-4 left-4 right-4 flex flex-wrap items-center gap-2">
-              <div className="flex items-center rounded-lg border bg-white shadow-sm">
+            <div className="pointer-events-none absolute bottom-4 left-4 right-4 flex flex-wrap items-center gap-2">
+              <div className="pointer-events-auto flex items-center rounded-lg border bg-white shadow-sm">
                 <Button
                   variant="ghost"
                   size="icon"
@@ -676,7 +754,7 @@ export function LineageView() {
               </div>
               <Button
                 variant="outline"
-                className="bg-white shadow-sm"
+                className="pointer-events-auto bg-white shadow-sm"
                 disabled={!visible.nodes.length}
                 onClick={() =>
                   void flow?.fitView({
@@ -691,7 +769,7 @@ export function LineageView() {
               </Button>
               <Button
                 variant="outline"
-                className="bg-white shadow-sm"
+                className="pointer-events-auto bg-white shadow-sm"
                 disabled={
                   !studio.selectedId ||
                   !visible.visibleIds.has(studio.selectedId)

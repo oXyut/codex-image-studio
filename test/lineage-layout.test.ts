@@ -6,6 +6,7 @@ import {
   filterLineageGraph,
   layoutLineageGraph,
   lineageEdgePath,
+  lineageBatchEdgePath,
 } from '../shared/lineage-utils.js';
 import type { LineageCommit } from '../shared/types.js';
 
@@ -117,4 +118,82 @@ test('異なる段の同時作成情報を含む履歴でも囲みと参照線�
   const layout = layoutLineageGraph(graph); assert.equal(layout.batchGroups.length, 2); assert.equal(hasOverlappingCards(layout.positions), false);
   for (const frame of layout.batchGroups) assert.ok((['x', 'y', 'width', 'height'] as const).every(key => Number.isFinite(frame[key])));
   for (const edge of graph.edges) assert.ok(layout.positions.get(edge.from)!.x < layout.positions.get(edge.to)!.x);
+});
+
+test('同時作成を受付順の2列グリッドに圧縮し、元の画像IDと系統を保持する', () => {
+  const batch = { id: 'four-grid', count: 4 };
+  const jobs = [job('root', 0), ...[4, 2, 1, 3].map(index => job(`v${index}`, index, { batch: { ...batch, index }, references: [{ jobId: 'root' }] })), job('leaf', 5, { references: [{ jobId: 'v2' }] }), job('unrelated', 6)];
+  const graph = buildLineageGraph({}, jobs), visible = filterLineageGraph(graph);
+  const compact = layoutLineageGraph(graph, visible, { compactBatches: true, cardHeight: 200 });
+  const expanded = layoutLineageGraph(graph, visible, { compactBatches: true, expandedBatchIds: new Set([batch.id]), cardHeight: 200 });
+  assert.deepEqual(compact.batchGroups[0].nodeIds, ['v1', 'v2', 'v3', 'v4']);
+  const [a, b, c, d] = ['v1', 'v2', 'v3', 'v4'].map(id => compact.positions.get(id)!);
+  assert.equal(a.y, b.y); assert.equal(c.y, d.y); assert.equal(a.x, c.x); assert.equal(b.x, d.x);
+  assert.ok(a.x < b.x && a.y < c.y);
+  assert.ok(compact.height < expanded.height * 0.6, '4枚のまとまりで縦の表示領域を40%以上減らす');
+  assert.equal(hasOverlappingCards(compact.positions), false);
+  assert.deepEqual([...compact.positions.keys()].sort(), jobs.map(image => image.id).sort());
+  assert.equal(graph.components.length, 2);
+  assert.deepEqual(graph.edges.filter(edge => edge.to === 'leaf').map(edge => edge.from), ['v2']);
+  assert.equal(graph.edges.length, 5, '同時作成の仲間の間に親子関係を追加しない');
+  const group = compact.batchGroups[0], unrelated = compact.positions.get('unrelated')!;
+  assert.ok(unrelated.y >= group.y + group.height);
+});
+
+test('2〜10枚と検索後の部分集合でも枠・次の世代の画像が重ならない', () => {
+  for (let count = 2; count <= 10; count++) {
+    const batch = { id: `grid-${count}`, count, deletedCount: 1 };
+    const graph = buildLineageGraph({}, [job('root', 0), ...Array.from({ length: count - 1 }, (_, index) => job(`v${index}`, index + 1, { batch: { ...batch, index: index + 1 }, prompt: index === 0 ? '検索対象' : 'ほかの画像', references: [{ jobId: 'root' }] })), job('leaf', 20, { references: [{ jobId: 'v0' }] })]);
+    const compact = layoutLineageGraph(graph, undefined, { compactBatches: true, cardHeight: 200 });
+    assert.equal(hasOverlappingCards(compact.positions), false);
+    const group = compact.batchGroups[0], leaf = compact.positions.get('leaf')!;
+    assert.ok(group.x + group.width < leaf.x, '2列の枠幅を次の世代の開始位置に反映する');
+    const filtered = layoutLineageGraph(graph, filterLineageGraph(graph, { query: '検索対象' }), { compactBatches: true });
+    assert.deepEqual([...filtered.positions.keys()].sort(), ['root', 'v0']);
+    assert.equal(filtered.batchGroups[0].visibleCount, 1);
+    assert.equal(filtered.batchGroups[0].count, count);
+    assert.equal(filtered.batchGroups[0].deletedCount, 1);
+  }
+});
+
+test('参照元や入力元が複数でも保持し、異なる世代の同時作成を一つの枠に合流させない', () => {
+  const batch = { id: 'legacy-grid', count: 2 };
+  const graph = buildLineageGraph({ commits: [commit('a', 'main'), commit('source', 'other'), commit('b', 'main', ['a'], { sourceJobId: 'source', operation: 'edit' }), commit('leaf', 'leaf', ['a', 'b'])] }, [job('a', 1, { batch: { ...batch, index: 1 } }), job('source', 2), job('b', 3, { batch: { ...batch, index: 2 } }), job('leaf', 4)]);
+  const layout = layoutLineageGraph(graph, undefined, { compactBatches: true });
+  assert.equal(layout.batchGroups.length, 2);
+  assert.equal(hasOverlappingCards(layout.positions), false);
+  for (const edge of graph.edges) assert.ok(layout.positions.get(edge.from)!.x < layout.positions.get(edge.to)!.x);
+  assert.deepEqual(graph.edges.filter(edge => edge.to === 'b').map(edge => [edge.from, edge.kind]), [['a', 'reference'], ['source', 'source']]);
+});
+
+test('グリッドの内側の画像への線はサムネイル間の余白を通り、仲間の画像に重ならない', () => {
+  const batch = { id: 'routes', count: 4 };
+  const graph = buildLineageGraph({}, [job('root', 0), ...[1, 2, 3, 4].map(index => job(`v${index}`, index, { batch: { ...batch, index }, references: [{ jobId: 'root' }] })), job('leaf', 5, { references: [{ jobId: 'v1' }] })]);
+  const layout = layoutLineageGraph(graph, undefined, { compactBatches: true }), group = layout.batchGroups[0];
+  // Sample the actual path, including Bezier sections, against the other grid images.
+  function sample(path: string) {
+    const parts = path.match(/[MLC]|-?\d+(?:\.\d+)?/g)!;
+    const points: { x: number; y: number }[] = [];
+    let current = { x: 0, y: 0 }, index = 0;
+    const point = () => ({ x: Number(parts[index++]), y: Number(parts[index++]) });
+    while (index < parts.length) {
+      const command = parts[index++];
+      if (command === 'M') { current = point(); continue; }
+      const controls = command === 'C' ? [point(), point()] : null, end = point();
+      for (let step = 0; step <= 50; step++) {
+        const t = step / 50, s = 1 - t;
+        points.push(controls ? { x: s ** 3 * current.x + 3 * s ** 2 * t * controls[0].x + 3 * s * t ** 2 * controls[1].x + t ** 3 * end.x, y: s ** 3 * current.y + 3 * s ** 2 * t * controls[0].y + 3 * s * t ** 2 * controls[1].y + t ** 3 * end.y } : { x: current.x + t * (end.x - current.x), y: current.y + t * (end.y - current.y) });
+      }
+      current = end;
+    }
+    return points;
+  }
+  for (const edge of graph.edges) {
+    const path = lineageBatchEdgePath(layout.positions.get(edge.from)!, layout.positions.get(edge.to)!, group.nodeIds.includes(edge.from) ? group : undefined, group.nodeIds.includes(edge.to) ? group : undefined);
+    assert.ok(!/NaN|undefined|Infinity/.test(path));
+    for (const id of group.nodeIds.filter(id => id !== edge.from && id !== edge.to)) {
+      const peer = layout.positions.get(id)!;
+      assert.ok(sample(path).every(point => !(point.x > peer.x && point.x < peer.x + peer.width && point.y > peer.y && point.y < peer.y + peer.height)), `${edge.from}から${edge.to}の線が${id}を横切らない`);
+    }
+  }
 });
