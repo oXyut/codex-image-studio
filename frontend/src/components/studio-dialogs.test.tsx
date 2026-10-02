@@ -34,6 +34,7 @@ const studio = {
   uploads: [upload],
   health: { ready: true },
   draft: { count: 1 },
+  favoritePendingIds: [],
 } as unknown as StudioContextValue;
 
 function Preview({
