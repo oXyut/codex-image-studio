@@ -6,6 +6,7 @@ import {
   Pencil,
   RefreshCw,
   Square,
+  Star,
   Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -18,8 +19,40 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useStudio } from "@/lib/studio-context";
-import { isComplete } from "@/lib/format";
+import { imageTitle, isComplete } from "@/lib/format";
 import type { ImageSource } from "@/lib/types";
+import { cn } from "@/lib/utils";
+
+export function ImageFavoriteButton({
+  source,
+  className,
+}: {
+  source: ImageSource;
+  className?: string;
+}) {
+  const studio = useStudio();
+  if (source.kind === "upload" || !isComplete(source)) return null;
+  const favorite = source.favorite === true;
+  const label = `${imageTitle(source)}をお気に入り${favorite ? "から外す" : "に追加"}`;
+  return (
+    <Button
+      variant="outline"
+      size="icon"
+      className={cn("bg-background", className)}
+      aria-label={label}
+      title={label}
+      aria-pressed={favorite}
+      disabled={studio.favoritePendingIds.includes(source.id)}
+      onClick={() => {
+        void studio.run(() => studio.setFavorite(source, !favorite));
+      }}
+    >
+      <Star
+        className={cn("size-4", favorite && "fill-amber-400 text-amber-600")}
+      />
+    </Button>
+  );
+}
 
 export function ImageActionMenu({
   source,
@@ -174,6 +207,7 @@ export function ImageActions({
             元の入力に置き換えて編集
           </Button>
         )}
+        <ImageFavoriteButton source={source} />
         <ImageDownload source={source} />
         <ImageActionMenu source={source} includeEditor={compact} />
       </div>

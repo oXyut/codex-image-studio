@@ -120,6 +120,7 @@ function context(overrides: Partial<StudioContextValue> = {}) {
     select: vi.fn(),
     setGraphBatchId: vi.fn(),
     openPreview: vi.fn(),
+    favoritePendingIds: [],
     ...overrides,
   } as unknown as StudioContextValue;
 }

@@ -24,6 +24,7 @@ export type ImageSource = {
   prompt?: string;
   basePrompt?: string;
   status: string;
+  favorite?: boolean;
   createdAt: string;
   size?: string;
   style?: string;
@@ -111,6 +112,8 @@ export type StudioContextValue = {
   submitting: boolean;
   retry: (source: ImageSource) => Promise<void>;
   cancel: (source: ImageSource) => Promise<void>;
+  setFavorite: (source: ImageSource, favorite: boolean) => Promise<void>;
+  favoritePendingIds: string[];
   openPreview: (source: ImageSource) => void;
   requestDelete: (source: ImageSource) => void;
   openTrash: () => void;

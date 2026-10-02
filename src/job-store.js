@@ -32,8 +32,15 @@ export class JobStore {
     return path;
   }
   async create(input) {
-    const job = { id: randomUUID(), ...input, status: 'queued', attempts: 0, createdAt: new Date().toISOString(), startedAt: null, finishedAt: null, message: '生成の空きを待っています。', error: null, image: null };
+    const job = { id: randomUUID(), ...input, favorite: false, status: 'queued', attempts: 0, createdAt: new Date().toISOString(), startedAt: null, finishedAt: null, message: '生成の空きを待っています。', error: null, image: null };
     await this.save(job); this.jobs.set(job.id, job); return job;
+  }
+  async setFavorite(id, favorite) {
+    if (typeof favorite !== 'boolean') throw new AppError('お気に入りの状態を指定してください。', 'INVALID_FAVORITE', 400);
+    this.lineage?.assertActive(id);
+    const job = this.get(id);
+    if (job.status !== 'succeeded' || !job.image || !/^image\.(png|jpg|webp)$/.test(job.image.fileName)) throw new AppError('完成した画像をお気に入りに選んでください。', 'IMAGE_NOT_READY', 400);
+    return this.update(id, { favorite });
   }
   update(id, changes) {
     // Resolve the current value only when this job's preceding write finishes.

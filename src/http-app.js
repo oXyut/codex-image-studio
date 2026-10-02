@@ -103,13 +103,18 @@ export function createApp({ store, manager, adapter, templates, lineage, uploads
         const batch = await manager.enqueueBatch(input, count);
         return json(response, 202, { batchId: batch.batchId, jobs: batch.jobs.map(job => publicJob(job, lineage)) });
       }
-      const route = pathname.match(/^\/api\/jobs\/([a-f0-9-]{36})(?:\/(image|cancel|retry|retry-batch))?$/);
+      const route = pathname.match(/^\/api\/jobs\/([a-f0-9-]{36})(?:\/(image|cancel|retry|retry-batch|favorite))?$/);
       if (route) {
         const [, id, action] = route;
         lineage?.assertActive(id);
         const job = store.get(id);
         if (lineage && !lineage.isVisible(id)) throw new AppError('画像の管理情報がまだ保存されていません。', 'LINEAGE_NOT_FOUND', 404);
         if (request.method === 'GET' && !action) return json(response, 200, publicJob(job, lineage));
+        if (request.method === 'PATCH' && action === 'favorite') {
+          const input = await readJson(request);
+          if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).length !== 1 || !Object.hasOwn(input, 'favorite')) throw new AppError('お気に入りの状態だけを指定してください。', 'INVALID_FAVORITE', 400);
+          return json(response, 200, publicJob(await store.setFavorite(id, input.favorite), lineage));
+        }
         if (request.method === 'POST' && action === 'cancel') return json(response, 200, publicJob(await manager.cancel(id), lineage));
         if (request.method === 'POST' && ['retry', 'retry-batch'].includes(action)) {
           let count;
@@ -169,7 +174,7 @@ export function createApp({ store, manager, adapter, templates, lineage, uploads
 export function publicJob(job, lineage, store) {
   const { image, lineageContext, lineageIntent, ...rest } = job;
   const deletedCount = job.batch && lineage && store ? store.list().filter(item => item.batch?.id === job.batch.id && lineage.isDeleted(item.id)).length : 0;
-  return { ...rest, ...(deletedCount ? { batch: { ...job.batch, deletedCount } } : {}), ...(lineage ? { lineage: lineage.get(job.id) } : {}), image: image ? { mime: image.mime, bytes: image.bytes, revisedPrompt: image.revisedPrompt, recovered: image.recovered ?? false, url: `/api/jobs/${job.id}/image`, downloadUrl: `/api/jobs/${job.id}/image?download=1` } : null };
+  return { ...rest, favorite: job.favorite === true, ...(deletedCount ? { batch: { ...job.batch, deletedCount } } : {}), ...(lineage ? { lineage: lineage.get(job.id) } : {}), image: image ? { mime: image.mime, bytes: image.bytes, revisedPrompt: image.revisedPrompt, recovered: image.recovered ?? false, url: `/api/jobs/${job.id}/image`, downloadUrl: `/api/jobs/${job.id}/image?download=1` } : null };
 }
 
 export function publicUpload(upload, lineage) {

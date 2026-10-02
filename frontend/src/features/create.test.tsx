@@ -49,6 +49,7 @@ function context(
     openPreview: vi.fn(),
     replaceFromSource: vi.fn(),
     cancel: vi.fn().mockResolvedValue(undefined),
+    favoritePendingIds: [],
     run: vi.fn(async (action) => {
       await action();
     }),
