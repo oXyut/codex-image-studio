@@ -1179,8 +1179,15 @@ type EditorFields = {
   tags: string;
   favorite: boolean;
 };
+const templateNameFromBody = (body: string) =>
+  body
+    .trim()
+    .replace(/\s+/g, " ")
+    .slice(0, 80)
+    .replace(/[\uD800-\uDBFF]$/, "")
+    .trimEnd();
 const editorFields = (template?: Template, body = ""): EditorFields => ({
-  name: template?.name ?? "",
+  name: template?.name ?? templateNameFromBody(body),
   body: template?.body ?? body,
   category: template?.category ?? "other",
   tags: template?.tags.join(", ") ?? "",
@@ -1218,6 +1225,17 @@ function TemplateEditor({
     value: EditorFields[K],
   ) {
     setFields((current) => ({ ...current, [field]: value }));
+  }
+  function updateBody(body: string) {
+    setFields((current) => ({
+      ...current,
+      body,
+      name:
+        !current.name.trim() ||
+        current.name === templateNameFromBody(current.body)
+          ? templateNameFromBody(body)
+          : current.name,
+    }));
   }
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -1335,7 +1353,14 @@ function TemplateEditor({
               required
               placeholder="例：やわらかな暖色"
               disabled={saving}
+              aria-describedby="template-editor-name-hint"
             />
+            <p
+              id="template-editor-name-hint"
+              className="text-xs text-muted-foreground"
+            >
+              本文から80文字以内で自動入力します。名前は自由に変更できます。
+            </p>
           </div>
           <div className="space-y-2">
             <label
@@ -1372,7 +1397,7 @@ function TemplateEditor({
             <Textarea
               id="template-editor-body"
               value={fields.body}
-              onChange={(event) => update("body", event.target.value)}
+              onChange={(event) => updateBody(event.target.value)}
               maxLength={2000}
               required
               rows={7}
