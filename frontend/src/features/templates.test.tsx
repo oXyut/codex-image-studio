@@ -1,0 +1,248 @@
+import {
+  cleanup,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { StudioContext } from "@/lib/studio-context";
+import type {
+  StudioContextValue,
+  Template,
+  TemplateVersion,
+} from "@/lib/types";
+import { TemplatePicker, TemplatesView } from "./templates";
+
+const current: Template = {
+  id: "color-template",
+  name: "やわらかな暖色",
+  body: "現在の暖色。",
+  category: "color",
+  tags: ["暖色"],
+  favorite: true,
+  version: 2,
+  createdAt: "2026-10-01T00:00:00Z",
+  updatedAt: "2026-10-02T00:00:00Z",
+  archivedAt: null,
+};
+const old: TemplateVersion = {
+  ...current,
+  body: "過去の暖色。",
+  version: 1,
+  createdAt: "2026-10-01T00:00:00Z",
+  operation: "create",
+};
+const latest: TemplateVersion = {
+  ...current,
+  version: 2,
+  createdAt: "2026-10-02T00:00:00Z",
+  operation: "update",
+};
+
+function context(
+  overrides: Partial<StudioContextValue> = {},
+): StudioContextValue {
+  return {
+    templates: [current],
+    draft: {
+      prompt: "",
+      layers: [],
+      references: [],
+      count: 1,
+      size: "auto",
+      style: "auto",
+      transparent: false,
+      lineageContext: null,
+    },
+    api: vi.fn().mockResolvedValue({ versions: [latest, old] }),
+    refresh: vi.fn().mockResolvedValue(undefined),
+    addTemplate: vi.fn().mockReturnValue(true),
+    navigate: vi.fn(),
+    run: vi.fn(async (action) => {
+      await action();
+    }),
+    ...overrides,
+  } as unknown as StudioContextValue;
+}
+function renderView(
+  value: StudioContextValue,
+  createRequest?: { key: number; body: string },
+) {
+  return render(
+    <StudioContext.Provider value={value}>
+      <TemplatesView createRequest={createRequest} />
+    </StudioContext.Provider>,
+  );
+}
+
+beforeAll(() => {
+  Element.prototype.hasPointerCapture = () => false;
+  Element.prototype.setPointerCapture = () => {};
+  Element.prototype.releasePointerCapture = () => {};
+});
+afterEach(cleanup);
+
+describe("テンプレートの管理", () => {
+  it("制作から保存する本文は独立した新規ダイアログで開く", async () => {
+    const value = context();
+    const view = renderView(value);
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    view.rerender(
+      <StudioContext.Provider value={value}>
+        <TemplatesView createRequest={{ key: 1, body: "制作中のプロンプト" }} />
+      </StudioContext.Provider>,
+    );
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByLabelText(/プロンプトの本文/)).toHaveValue(
+      "制作中のプロンプト",
+    );
+    expect(within(dialog).getByLabelText(/名前/)).toHaveFocus();
+  });
+
+  it("Escapeで編集を閉じると、編集を開いた操作へフォーカスを戻す", async () => {
+    const user = userEvent.setup();
+    renderView(context());
+    const edit = screen.getByRole("button", { name: "編集" });
+    await user.click(edit);
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    await user.keyboard("{Escape}");
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
+    await waitFor(() => expect(edit).toHaveFocus());
+  });
+
+  it("409時は入力と編集元の版を保持し、明示的に最新版を読み込んだ後だけ置き換える", async () => {
+    const user = userEvent.setup();
+    const newer = { ...latest, version: 3, body: "別の操作で更新した本文。" };
+    const api = vi
+      .fn()
+      .mockRejectedValueOnce(
+        Object.assign(new Error("競合しました"), {
+          status: 409,
+          code: "VERSION_CONFLICT",
+        }),
+      )
+      .mockResolvedValueOnce({ versions: [newer, latest, old] })
+      .mockResolvedValueOnce({ ...newer, version: 4 });
+    const value = context({ api });
+    renderView(value);
+    await user.click(screen.getByRole("button", { name: "編集" }));
+    const dialog = screen.getByRole("dialog");
+    const body = within(dialog).getByLabelText(/プロンプトの本文/);
+    await user.clear(body);
+    await user.type(body, "編集中の内容を残す。");
+    await user.click(within(dialog).getByRole("button", { name: "保存" }));
+    await within(dialog).findByRole("alert");
+    expect(body).toHaveValue("編集中の内容を残す。");
+    expect(JSON.parse(api.mock.calls[0][1].body)).toMatchObject({
+      expectedVersion: 2,
+      body: "編集中の内容を残す。",
+    });
+    expect(api).toHaveBeenCalledTimes(1);
+    await user.click(
+      within(dialog).getByRole("button", { name: "最新を読み込む" }),
+    );
+    await waitFor(() => expect(body).toHaveValue("別の操作で更新した本文。"));
+    await user.click(within(dialog).getByRole("button", { name: "保存" }));
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
+    expect(JSON.parse(api.mock.calls[2][1].body)).toMatchObject({
+      expectedVersion: 3,
+      body: "別の操作で更新した本文。",
+    });
+  });
+
+  it("選んだ過去版を制作に追加し、版復元には最新版のexpectedVersionを送る", async () => {
+    const user = userEvent.setup();
+    const api = vi
+      .fn()
+      .mockImplementation(async (path: string) =>
+        path.endsWith("/revert")
+          ? { ...current, body: old.body, version: 3 }
+          : { versions: [latest, old] },
+      );
+    const value = context({ api });
+    renderView(value);
+    await user.click(screen.getByRole("tab", { name: "履歴・差分" }));
+    const afterSelect = await screen.findByRole("combobox", {
+      name: "比較先の版",
+    });
+    await waitFor(() => expect(afterSelect).not.toBeDisabled());
+    await user.click(afterSelect);
+    await user.click(screen.getByRole("option", { name: "v1" }));
+    await user.click(screen.getByRole("button", { name: "v1 を制作に追加" }));
+    expect(value.addTemplate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: current.id,
+        version: 1,
+        body: "過去の暖色。",
+      }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "v1 の内容を新しい版として復元" }),
+    );
+    await waitFor(() =>
+      expect(api).toHaveBeenCalledWith(
+        "/api/templates/color-template/revert",
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({ version: 1, expectedVersion: 2 }),
+        }),
+      ),
+    );
+    expect(value.refresh).toHaveBeenCalled();
+  });
+
+  it("アーカイブからの復元は選択した版を編集元として送る", async () => {
+    const user = userEvent.setup();
+    const archived = {
+      ...current,
+      archivedAt: "2026-10-02T03:00:00Z",
+      version: 3,
+    };
+    const api = vi
+      .fn()
+      .mockResolvedValue({ ...archived, archivedAt: null, version: 4 });
+    const value = context({ templates: [archived], api });
+    renderView(value);
+    await user.click(screen.getByRole("tab", { name: /アーカイブ/ }));
+    await user.click(
+      screen.getByRole("button", { name: "アーカイブから復元" }),
+    );
+    await waitFor(() =>
+      expect(api).toHaveBeenCalledWith(
+        "/api/templates/color-template/restore",
+        { method: "POST", body: JSON.stringify({ expectedVersion: 3 }) },
+      ),
+    );
+  });
+});
+
+describe("制作でのテンプレート選択", () => {
+  it("追加済みの版を表示し、管理は明示的な遷移で開く", async () => {
+    const user = userEvent.setup();
+    const value = context({ draft: { ...context().draft, layers: [old] } });
+    const onOpenChange = vi.fn(),
+      onManage = vi.fn();
+    render(
+      <StudioContext.Provider value={value}>
+        <TemplatePicker open onOpenChange={onOpenChange} onManage={onManage} />
+      </StudioContext.Provider>,
+    );
+    expect(screen.getByText("下書きには v1 を追加済み")).toBeInTheDocument();
+    expect(screen.queryByLabelText(/プロンプトの本文/)).not.toBeInTheDocument();
+    await user.click(
+      screen.getByRole("button", { name: `${current.name}を最新版に更新` }),
+    );
+    expect(value.addTemplate).toHaveBeenCalledWith(current);
+    await user.click(
+      screen.getByRole("button", { name: "テンプレートを管理" }),
+    );
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+    expect(onManage).toHaveBeenCalledOnce();
+  });
+});
