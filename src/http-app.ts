@@ -8,17 +8,20 @@ import type { Health, Job, Upload } from '../shared/types.js';
 import { isRecord, record } from '../shared/unknown.js';
 import type { JobManager, JobStore } from './job-store.js';
 import type { LineageStore } from './lineage-store.js';
+import type { LanAccess } from './lan-access.js';
+import { lanDisabledPage } from './lan-access.js';
 import { prepareGeneration } from './prompt-builder.js';
 import type { TemplateStore } from './template-store.js';
 import type { UploadStore } from './upload-store.js';
 import { MAX_UPLOAD_BYTES } from './upload-store.js';
 import { AppError, validateBatchCount } from './validation.js';
 
-type AppOptions = { store: JobStore; manager: JobManager; adapter: { health: (force?: boolean) => Promise<Health> }; templates?: TemplateStore; lineage?: LineageStore; uploads?: UploadStore; publicDirectory: string };
+type AppOptions = { store: JobStore; manager: JobManager; adapter: { health: (force?: boolean) => Promise<Health> }; templates?: TemplateStore; lineage?: LineageStore; uploads?: UploadStore; publicDirectory: string; lanAccess?: LanAccess; lanHost?: string };
 
 const assetTypes: Record<string, string> = { js: 'text/javascript; charset=utf-8', css: 'text/css; charset=utf-8', woff2: 'font/woff2' };
 
-export function createApp({ store, manager, adapter, templates, lineage, uploads, publicDirectory }: AppOptions) {
+export function createApp({ store, manager, adapter, templates, lineage, uploads, publicDirectory, lanAccess, lanHost }: AppOptions) {
+  if (lanHost && !lanAccess) throw new Error('LAN接続には端末認証が必要です。');
   if (lineage) { store.lineage = lineage; if (uploads) uploads.lineage = lineage; }
   const token = randomBytes(32).toString('hex');
   const server = createServer(async (request, response) => {
@@ -30,12 +33,14 @@ export function createApp({ store, manager, adapter, templates, lineage, uploads
     response.setHeader('Cache-Control', 'no-store');
     try {
       const expectedPort = String((server.address() as AddressInfo | null)?.port);
-      const allowedHosts = [`127.0.0.1:${expectedPort}`, `localhost:${expectedPort}`];
+      const allowedHosts = lanHost ? [`${lanHost}:${expectedPort}`] : [`127.0.0.1:${expectedPort}`, `localhost:${expectedPort}`];
       if (!allowedHosts.includes(request.headers.host ?? '')) throw new AppError('ローカル接続のみ利用できます。', 'INVALID_HOST', 403);
       if (request.headers['sec-fetch-site'] === 'cross-site') throw new AppError('別サイトからのリクエストは許可されていません。', 'CROSS_SITE_REQUEST', 403);
       if (request.headers.origin && request.headers.origin !== `http://${request.headers.host}`) throw new AppError('接続元が一致しません。', 'INVALID_ORIGIN', 403);
       const url = new URL(request.url ?? '/', `http://${request.headers.host}`);
       const { pathname } = url;
+      if (!lanAccess && request.method === 'GET' && pathname === '/lan') { lanDisabledPage(response, styleNonce); return; }
+      if (lanAccess && await lanAccess.handle(request, response, pathname, Boolean(lanHost), token, styleNonce)) return;
       if (request.method === 'GET' && pathname === '/api/session') return json(response, 200, { token });
       if (request.method === 'GET' && pathname === '/api/health') return json(response, 200, await adapter.health(url.searchParams.get('refresh') === '1'));
       if (request.method === 'GET' && pathname === '/api/jobs') return json(response, 200, { jobs: store.list().filter(job => !lineage || lineage.isVisible(job.id)).map(job => publicJob(job, lineage, store)) });
