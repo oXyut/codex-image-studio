@@ -128,13 +128,19 @@ describe("画像のない失敗の詳細", () => {
     expect(screen.getByText("この履歴には詳しい理由が保存されていません。生成時の入力は保持されています。")).toBeVisible();
   });
 
-  it("画像がある履歴は通常の画像ビューアと詳細の表示を維持する", () => {
-    setup({ ...failed, status: "succeeded", image: { url: "/sample.png", downloadUrl: "/sample.png?download=1" } });
+  it("画像がある履歴は画像優先のビューアと任意に開く詳細・設定を維持する", async () => {
+    const { user } = setup({ ...failed, status: "succeeded", image: { url: "/sample.png", downloadUrl: "/sample.png?download=1" } });
     expect(screen.getByRole("dialog")).toHaveClass("h-[96dvh]");
     expect(screen.getByRole("img", { name: "青い鳥のイラスト" })).toBeVisible();
+    expect(screen.queryByRole("complementary")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "詳細" }));
     expect(screen.getByRole("complementary", { name: "画像の詳細" })).toBeVisible();
     expect(screen.queryByRole("button", { name: "生成時の設定" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "生成時のプロンプト" })).toHaveAttribute("aria-expanded", "false");
+    expect(screen.getByRole("button", { name: "生成設定・ファイル情報" })).toHaveAttribute("aria-expanded", "false");
+    await user.click(screen.getByRole("button", { name: "生成設定・ファイル情報" }));
+    expect(screen.getByText("イラスト", { exact: true })).toBeVisible();
+    expect(screen.getByText(`ID: ${failed.id}`)).toBeVisible();
   });
 
   it("実際のProviderで入力・テンプレート・参照・設定を読み戻し、取り消しで元の下書きに戻る", async () => {

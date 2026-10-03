@@ -14,6 +14,18 @@ import { ImageActions } from "./image-actions";
 import { ImageInspector } from "./image-inspector";
 import { ImageViewport } from "./image-viewport";
 
+const detailsPreferenceKey = "codex-image-studio.viewer-details";
+const wideLayoutQuery = "(min-width: 1024px)";
+
+function loadDetailsPreference(): boolean | null {
+  try {
+    const saved = localStorage.getItem(detailsPreferenceKey);
+    return saved === "true" ? true : saved === "false" ? false : null;
+  } catch {
+    return null;
+  }
+}
+
 export function ImageViewer({
   source,
   previous,
@@ -26,22 +38,39 @@ export function ImageViewer({
   onSource: (source: ImageSource | null) => void;
 }) {
   const studio = useStudio();
-  const [detailsOpen, setDetailsOpen] = useState(true);
+  const [detailsPreference, setDetailsPreference] = useState(loadDetailsPreference);
+  const [wideLayout, setWideLayout] = useState(
+    () => window.matchMedia(wideLayoutQuery).matches,
+  );
+  const detailsButton = useRef<HTMLButtonElement>(null);
+  const opener = useRef<HTMLElement | null>(null);
+  const detailsOpen = detailsPreference ?? wideLayout;
   const detailsId = useId();
-  const recoveryReturnFocus = useRef<HTMLElement | null>(null);
   const hasImage = Boolean(source?.image);
   const showDetails = detailsOpen || !hasImage;
   const recoveryLayout = source?.status === "failed" && !hasImage;
   useEffect(() => {
-    if (!source) setDetailsOpen(true);
-  }, [source?.id]);
+    const query = window.matchMedia(wideLayoutQuery);
+    const update = () => setWideLayout(query.matches);
+    update();
+    query.addEventListener("change", update);
+    return () => query.removeEventListener("change", update);
+  }, []);
+
+  function setDetailsOpen(open: boolean) {
+    setDetailsPreference(open);
+    try {
+      localStorage.setItem(detailsPreferenceKey, String(open));
+    } catch {
+      // Keep the choice for this session even if browser storage is unavailable.
+    }
+  }
 
   return (
     <Dialog
       open={!!source}
       onOpenChange={(open) => {
         if (!open) {
-          setDetailsOpen(true);
           onSource(null);
         }
       }}
@@ -54,16 +83,14 @@ export function ImageViewer({
             : "flex h-[96dvh] max-h-[96dvh] w-[calc(100%-2rem)] max-w-none flex-col gap-0 overflow-hidden p-0 sm:max-w-none max-sm:h-[100dvh] max-sm:max-h-[100dvh] max-sm:w-full max-sm:rounded-none"
         }
         onOpenAutoFocus={() => {
-          if (recoveryLayout && document.activeElement instanceof HTMLElement) {
-            recoveryReturnFocus.current = document.activeElement;
-          }
+          opener.current = document.activeElement instanceof HTMLElement
+            ? document.activeElement : null;
         }}
         onCloseAutoFocus={(event) => {
-          const opener = recoveryReturnFocus.current;
-          recoveryReturnFocus.current = null;
-          if (opener?.isConnected) {
+          const activeDialog = document.activeElement?.closest('[role="dialog"]');
+          if (opener.current?.isConnected && opener.current !== document.body && !activeDialog?.isConnected) {
             event.preventDefault();
-            opener.focus();
+            opener.current.focus();
           }
         }}
         onKeyDown={(event) => {
@@ -102,11 +129,12 @@ export function ImageViewer({
           <div className="flex shrink-0 items-center gap-2">
             {hasImage && (
               <Button
+                ref={detailsButton}
                 variant={detailsOpen ? "secondary" : "outline"}
                 size="sm"
                 aria-expanded={detailsOpen}
                 aria-controls={detailsId}
-                onClick={() => setDetailsOpen((open) => !open)}
+                onClick={() => setDetailsOpen(!detailsOpen)}
               >
                 <PanelRight className="size-4" />
                 詳細
@@ -119,7 +147,6 @@ export function ImageViewer({
                 ? "生成失敗の詳細を閉じる"
                 : "画像プレビューを閉じる"}
               onClick={() => {
-                setDetailsOpen(true);
                 onSource(null);
               }}
             >
@@ -130,9 +157,9 @@ export function ImageViewer({
         {source && (
           <div className={recoveryLayout
             ? "min-h-0"
-            : "flex min-h-0 flex-1 flex-col md:flex-row"}>
+            : "flex min-h-0 flex-1 flex-col lg:flex-row"}>
             {hasImage && (
-              <div className="flex min-h-0 min-w-0 flex-1 flex-col max-md:basis-1/2">
+              <div className="flex min-h-0 min-w-0 flex-1 flex-col">
                 <div className="relative flex min-h-0 flex-1">
                   <ImageViewport
                     key={`${source.id}:${source.image!.url}`}
@@ -176,7 +203,7 @@ export function ImageViewer({
                   recoveryLayout
                     ? "min-h-0 w-full"
                     : hasImage
-                      ? "min-h-0 shrink-0 overflow-hidden border-t md:w-[360px] md:border-l md:border-t-0 max-md:flex-1 max-md:basis-1/2"
+                      ? "min-h-0 shrink-0 overflow-hidden border-t lg:w-[360px] lg:border-l lg:border-t-0 max-lg:basis-2/5"
                       : "min-h-0 w-full max-w-2xl flex-1 self-center"
                 }
               >
@@ -186,7 +213,10 @@ export function ImageViewer({
                   mode={studio.view === "lineage" ? "lineage" : "history"}
                   showPreview={false}
                   recoveryLayout={recoveryLayout}
-                  onClose={hasImage ? () => setDetailsOpen(false) : undefined}
+                  onClose={hasImage ? () => {
+                    setDetailsOpen(false);
+                    detailsButton.current?.focus();
+                  } : undefined}
                 />
               </aside>
             )}

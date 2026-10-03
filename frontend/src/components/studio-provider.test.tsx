@@ -57,11 +57,12 @@ function Probe() {
 }
 
 describe("お気に入りの共有状態", () => {
-  it("詳細から系統図へ移動するとビューアを閉じ、再度開くと詳細を展開する", async () => {
+  it("詳細から系統図へ移動するとビューアを閉じ、閉じる方法によらず詳細の選択を保持する", async () => {
     const user = userEvent.setup();
     render(<StudioProvider><Probe /></StudioProvider>);
     await screen.findByText("制作中の入力");
     await user.click(screen.getByRole("button", { name: "プレビューを開く" }));
+    await user.click(screen.getByRole("button", { name: "詳細" }));
     await user.click(screen.getByRole("button", { name: "系統図で見る" }));
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "プレビューを開く" }));
@@ -71,13 +72,12 @@ describe("お気に入りの共有状態", () => {
     expect(screen.queryByRole("complementary")).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "画像プレビューを閉じる" }));
     await user.click(screen.getByRole("button", { name: "プレビューを開く" }));
-    expect(screen.getByRole("complementary", { name: "画像の詳細" })).toBeVisible();
-    await user.click(screen.getByRole("button", { name: "詳細" }));
+    expect(screen.queryByRole("complementary", { name: "画像の詳細" })).not.toBeInTheDocument();
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "プレビューを開く" }));
-    expect(screen.getByRole("button", { name: "詳細" })).toHaveAttribute("aria-expanded", "true");
-    expect(screen.getByRole("complementary", { name: "画像の詳細" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "詳細" })).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("complementary", { name: "画像の詳細" })).not.toBeInTheDocument();
     expect(api.mock.calls.every(([, options]) => !options?.method)).toBe(true);
   });
 

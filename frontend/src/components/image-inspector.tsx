@@ -199,9 +199,7 @@ export function ImageInspector({
 
   const generationSettings = (
     <dl
-      className={recoveryLayout
-        ? "grid grid-cols-[auto_1fr] gap-x-5 gap-y-3 text-sm"
-        : "grid grid-cols-[auto_1fr] gap-x-5 gap-y-3 border-t pt-5 text-sm"}
+      className="grid grid-cols-[auto_1fr] gap-x-5 gap-y-3 text-sm"
     >
       <dt className="text-muted-foreground">サイズ</dt>
       <dd className="text-right">
@@ -445,12 +443,24 @@ export function ImageInspector({
             )}
           </div>
         </div>
-        {!recoveryLayout && generationSettings}
         <Accordion
           type="multiple"
           defaultValue={recoveryLayout ? ["prompt"] : []}
           className="space-y-3"
         >
+          {!recoveryLayout && (
+            <AccordionItem value="settings" className="rounded-lg border px-3">
+              <AccordionTrigger className="text-sm">
+                生成設定・ファイル情報
+              </AccordionTrigger>
+              <AccordionContent className="space-y-4">
+                {generationSettings}
+                <p className="break-all text-sm text-muted-foreground">
+                  ID: {source.id}
+                </p>
+              </AccordionContent>
+            </AccordionItem>
+          )}
           {!uploaded && (
             <AccordionItem value="prompt" className="rounded-lg border px-3">
               <AccordionTrigger className="text-sm">
@@ -607,9 +617,6 @@ export function ImageInspector({
             </AccordionItem>
           )}
         </Accordion>
-        <p className="break-all text-sm text-muted-foreground">
-          ID: {source.id}
-        </p>
       </div>
     </div>
   );
