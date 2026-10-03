@@ -4,10 +4,27 @@ import { request as httpRequest } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import test from 'node:test';
+import { JSDOM } from 'jsdom';
+import jsQR from 'jsqr';
+import { PNG } from 'pngjs';
 import { createApp } from '../src/http-app.js';
 import { JobManager, JobStore } from '../src/job-store.js';
 import { LanAccess, validateLanHost } from '../src/lan-access.js';
 import { close, listen, serverPort, type TestAdapter } from './helpers.js';
+
+function readPairing(page: string) {
+  const image = page.match(/id="pairing-qr"[^>]+src="data:image\/png;base64,([^"]+)"/);
+  assert.ok(image, 'QR画像が表示される');
+  const png = PNG.sync.read(Buffer.from(image[1], 'base64'));
+  const decoded = jsQR.default(new Uint8ClampedArray(png.data), png.width, png.height);
+  assert.ok(decoded, '表示されたQR画像を読み取れる');
+  const url = new URL(decoded.data);
+  const qrToken = new URLSearchParams(url.hash.slice(1)).get('token');
+  assert.match(qrToken ?? '', /^[A-Za-z0-9_-]{43}$/);
+  const code = page.match(/id="pairing-code">(\d{8})/);
+  assert.ok(code, '番号入力用の8桁コードを残す');
+  return { url, qrToken: qrToken!, code: code[1] };
+}
 
 async function setup(t: test.TestContext) {
   const directory = await mkdtemp(join(tmpdir(), 'studio-lan-'));
@@ -38,8 +55,9 @@ async function setup(t: test.TestContext) {
   }
   async function code() { return (await owner()).match(/id="pairing-code">(\d{8})/)![1]; }
   async function pair(value: string) { return await lan('/lan/pair', { method: 'POST', headers: { Origin: remoteBase, 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ code: value }).toString() }); }
+  async function pairQr(qrToken: string) { return await lan('/lan/pair', { method: 'POST', headers: { Origin: remoteBase, 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ qrToken }).toString() }); }
   async function cookie() { const response = await pair(await code()); assert.equal(response.status, 303); return response.headers['set-cookie']![0].split(';')[0]; }
-  return { store, localBase, remoteBase, lan, owner, code, pair, cookie, advance: (ms: number) => { now += ms; } };
+  return { store, localBase, remoteBase, lan, owner, code, pair, pairQr, cookie, advance: (ms: number) => { now += ms; } };
 }
 
 test('LAN_HOSTはMacに割り当てられたプライベートIPv4だけを受け付ける', () => {
@@ -57,6 +75,129 @@ test('未承認端末にはコード入力だけを表示し、全APIと画像�
     const response = await lan(path); assert.equal(response.status, 401, path); assert.match(response.body, /DEVICE_AUTH_REQUIRED/);
   }
   assert.equal((await lan('/api/jobs', { method: 'POST', body: '{"prompt":"cat"}' })).status, 401);
+});
+test('スマホ連携を開くだけで読めるQRと番号を表示し、再読み込みで期限を延ばさない', async t => {
+  const { localBase, remoteBase, pairQr, advance } = await setup(t);
+  const response = await fetch(`${localBase}/lan`), page = await response.text();
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('cache-control'), 'no-store');
+  assert.equal(response.headers.get('referrer-policy'), 'same-origin');
+  const pairing = readPairing(page);
+  assert.equal(pairing.url.origin, remoteBase);
+  assert.equal(pairing.url.pathname, '/lan/qr');
+  assert.equal(pairing.url.search, '');
+  advance(4 * 60_000);
+  const refreshed = readPairing(await (await fetch(`${localBase}/lan`)).text());
+  assert.equal(refreshed.qrToken, pairing.qrToken);
+  assert.equal(refreshed.code, pairing.code);
+  advance(60_000);
+  assert.equal((await pairQr(pairing.qrToken)).status, 403);
+  const renewed = readPairing(await (await fetch(`${localBase}/lan`)).text());
+  assert.notEqual(renewed.qrToken, pairing.qrToken);
+  assert.equal((await pairQr(renewed.qrToken)).status, 303);
+});
+test('QRリンクのプレビューでは消費せず、ブラウザがURLから秘密を消して自動承認する', async t => {
+  const { owner, lan, remoteBase, pair } = await setup(t);
+  const pairing = readPairing(await owner());
+  const preview = await lan(pairing.url.pathname), script = await lan('/lan/qr.js');
+  assert.equal(preview.status, 200);
+  assert.equal(preview.headers['set-cookie'], undefined);
+  assert.equal(preview.headers['referrer-policy'], 'same-origin');
+  assert.doesNotMatch(preview.body, new RegExp(pairing.qrToken));
+  assert.match(preview.body, /<script src="\/lan\/qr.js" defer>/);
+  assert.match(preview.headers['content-security-policy'] as string, /script-src 'self';/);
+  assert.equal(script.status, 200);
+  assert.match(script.headers['content-type'] as string, /text\/javascript/);
+  assert.doesNotMatch(script.body, new RegExp(pairing.qrToken));
+  const dom = new JSDOM(preview.body, { url: pairing.url.href, runScripts: 'outside-only' });
+  t.after(() => dom.window.close());
+  let submission: ReturnType<typeof lan> | undefined;
+  const form = dom.window.document.querySelector<HTMLFormElement>('#qr-pairing-form')!;
+  form.addEventListener('submit', event => {
+    event.preventDefault();
+    assert.equal(dom.window.location.hash, '');
+    assert.equal(dom.window.location.search, '');
+    const input = form.querySelector<HTMLInputElement>('#qr-token')!;
+    assert.equal(input.value, pairing.qrToken);
+    submission = lan(form.getAttribute('action')!, { method: 'POST', headers: { Origin: remoteBase, 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ [input.name]: input.value }).toString() });
+  });
+  dom.window.eval(script.body);
+  assert.ok(submission, '番号入力やボタン操作なしで送信する');
+  const response = await submission;
+  assert.equal(response.status, 303);
+  assert.equal(response.headers.location, '/');
+  assert.match(response.headers['set-cookie']![0], /HttpOnly; SameSite=Strict; Path=\//);
+  const cookie = response.headers['set-cookie']![0].split(';')[0];
+  assert.equal((await lan('/api/jobs', { headers: { Cookie: cookie } })).status, 200);
+  assert.match((await lan('/', { headers: { Cookie: cookie } })).body, /\/assets\//);
+  assert.equal((await pair(pairing.code)).status, 403);
+});
+test('QRが欠けたリンクでは自動送信せず、番号入力へ案内する', async t => {
+  const { lan, remoteBase } = await setup(t);
+  const preview = await lan('/lan/qr'), script = await lan('/lan/qr.js');
+  for (const hash of ['', '#token=invalid', '#token=%3Cscript%3E']) {
+    const dom = new JSDOM(preview.body, { url: `${remoteBase}/lan/qr${hash}`, runScripts: 'outside-only' });
+    try {
+      let submitted = false;
+      dom.window.document.querySelector('form')!.addEventListener('submit', event => { event.preventDefault(); submitted = true; });
+      dom.window.eval(script.body);
+      assert.equal(submitted, false);
+      assert.equal(dom.window.location.hash, '');
+      assert.match(dom.window.document.querySelector('[role="alert"]')!.textContent!, /番号で承認/);
+      assert.equal(dom.window.document.querySelector('a')!.getAttribute('href'), '/');
+    } finally { dom.window.close(); }
+  }
+});
+test('QRと番号はどちらで承認しても両方が単回使用になり、同時送信でも1台だけ承認する', async t => {
+  const { owner, pair, pairQr } = await setup(t);
+  const first = readPairing(await owner());
+  assert.equal((await pairQr(first.qrToken)).status, 303);
+  assert.equal((await pairQr(first.qrToken)).status, 403);
+  assert.equal((await pair(first.code)).status, 403);
+  const second = readPairing(await owner());
+  assert.equal((await pair(second.code)).status, 303);
+  assert.equal((await pairQr(second.qrToken)).status, 403);
+  const third = readPairing(await owner());
+  const simultaneous = await Promise.all([pairQr(third.qrToken), pair(third.code)]);
+  assert.deepEqual(simultaneous.map(response => response.status).sort(), [303, 403]);
+});
+test('QRの再発行・期限切れ・承認解除と8時間の端末期限でアクセスを失効する', async t => {
+  const { owner, pairQr, lan, advance } = await setup(t);
+  const old = readPairing(await owner()); await owner();
+  assert.equal((await pairQr(old.qrToken)).status, 403);
+  const expired = readPairing(await owner()); advance(5 * 60_000);
+  assert.equal((await pairQr(expired.qrToken)).status, 403);
+  const fresh = readPairing(await owner()), paired = await pairQr(fresh.qrToken);
+  const cookie = paired.headers['set-cookie']![0].split(';')[0];
+  advance(8 * 60 * 60_000);
+  assert.equal((await lan('/api/jobs', { headers: { Cookie: cookie } })).status, 401);
+  const next = readPairing(await owner()), connected = await pairQr(next.qrToken);
+  const nextCookie = connected.headers['set-cookie']![0].split(';')[0];
+  const pending = readPairing(await owner());
+  const revoked = await owner('revoke');
+  assert.doesNotMatch(revoked, /id="pairing-qr"|id="pairing-code"/);
+  assert.equal((await pairQr(pending.qrToken)).status, 403);
+  assert.equal((await lan('/api/jobs', { headers: { Cookie: nextCookie } })).status, 401);
+});
+test('QR承認も接続元と試行回数を検証し、不正なQRから正しい番号へ切り替えない', async t => {
+  const { owner, pairQr, lan, remoteBase } = await setup(t);
+  const pairing = readPairing(await owner());
+  const origins: Record<string, string>[] = [{}, { Origin: 'https://evil.example' }];
+  for (const headers of origins) {
+    const response = await lan('/lan/pair', { method: 'POST', headers: { ...headers, 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ qrToken: pairing.qrToken }).toString() });
+    assert.equal(response.status, 403);
+    assert.equal(response.headers['set-cookie'], undefined);
+  }
+  assert.equal((await lan('/lan/pair', { method: 'POST', headers: { Origin: remoteBase, 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ qrToken: '', code: pairing.code }).toString() })).status, 403);
+  assert.equal((await pairQr(pairing.qrToken)).status, 303);
+  const limited = readPairing(await owner());
+  const wrong = limited.qrToken === 'A'.repeat(43) ? 'B'.repeat(43) : 'A'.repeat(43);
+  for (let index = 0; index < 5; index++) assert.equal((await pairQr(wrong)).status, 403);
+  assert.equal((await pairQr(limited.qrToken)).status, 403);
+  for (let index = 8; index < 20; index++) await pairQr(wrong);
+  const throttled = await pairQr(wrong);
+  assert.equal(throttled.status, 429);
+  assert.equal(throttled.headers['retry-after'], '60');
 });
 test('コードは単回使用で、承認後の画像・履歴とCSRF保護を維持する', async t => {
   const { store, code, pair, lan } = await setup(t);
