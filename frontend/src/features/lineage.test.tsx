@@ -172,6 +172,55 @@ describe("LineageView", () => {
       expect.objectContaining({ id: child.id }),
     );
     expect(studio.select).not.toHaveBeenCalled();
+    expect(studio.openPreview).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["生成画像", child.id, /Target Cabin、完成/],
+    ["アップロード画像", uploaded.id, /森林の参照、アップロード/],
+  ])(
+    "%sの右クリックから削除を選んでも拡大プレビューを開かない",
+    async (_, id, name) => {
+      const studio = context({ selectedId: source.id, requestDelete: vi.fn() });
+      const user = userEvent.setup();
+      render(view(studio));
+      const node = screen.getByRole("button", { name });
+      fireEvent.contextMenu(
+        node.querySelector("[data-slot=context-menu-trigger]")!,
+      );
+      expect(studio.openPreview).not.toHaveBeenCalled();
+
+      await user.click(
+        screen.getByRole("menuitem", { name: "画像と下流をゴミ箱へ" }),
+      );
+
+      expect(studio.requestDelete).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ id }),
+      );
+      expect(studio.openPreview).not.toHaveBeenCalled();
+      expect(studio.select).not.toHaveBeenCalled();
+      expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    },
+  );
+
+  it("右クリックメニューの拡大プレビューは対象画像を一度だけ開く", async () => {
+    const image = {
+      ...child,
+      image: { url: "/image.png", downloadUrl: "/download.png" },
+    };
+    const studio = context({ jobs: [image] });
+    const user = userEvent.setup();
+    render(view(studio));
+    const node = screen.getByRole("button", { name: /Target Cabin、完成/ });
+    fireEvent.contextMenu(
+      node.querySelector("[data-slot=context-menu-trigger]")!,
+    );
+    await user.click(
+      screen.getByRole("menuitem", { name: "拡大プレビュー" }),
+    );
+
+    expect(studio.openPreview).toHaveBeenCalledExactlyOnceWith(image);
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
   });
 
   it("検索中も全ての参照元・入力元とアップロード起点を残す", () => {

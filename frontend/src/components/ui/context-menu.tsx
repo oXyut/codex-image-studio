@@ -104,6 +104,8 @@ export function ContextMenu({
             "z-50 max-h-(--radix-context-menu-content-available-height) min-w-56 max-w-[calc(100vw-2rem)] origin-(--radix-context-menu-content-transform-origin) overflow-y-auto rounded-md border bg-popover p-1 text-popover-foreground shadow-md outline-none",
             className,
           )}
+          // Portal clicks still bubble to the trigger's React ancestors.
+          onClick={(event) => event.stopPropagation()}
           onKeyDown={(event) => event.stopPropagation()}
         >
           {content}
