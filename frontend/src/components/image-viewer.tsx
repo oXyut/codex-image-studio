@@ -43,6 +43,7 @@ export function ImageViewer({
     () => window.matchMedia(wideLayoutQuery).matches,
   );
   const detailsButton = useRef<HTMLButtonElement>(null);
+  const opener = useRef<HTMLElement | null>(null);
   const detailsOpen = detailsPreference ?? wideLayout;
   const detailsId = useId();
   const hasImage = Boolean(source?.image);
@@ -76,6 +77,17 @@ export function ImageViewer({
       <DialogContent
         showCloseButton={false}
         className="flex h-[96dvh] max-h-[96dvh] w-[calc(100%-2rem)] max-w-none flex-col gap-0 overflow-hidden p-0 sm:max-w-none max-sm:h-[100dvh] max-sm:max-h-[100dvh] max-sm:w-full max-sm:rounded-none"
+        onOpenAutoFocus={() => {
+          opener.current = document.activeElement instanceof HTMLElement
+            ? document.activeElement : null;
+        }}
+        onCloseAutoFocus={(event) => {
+          const activeDialog = document.activeElement?.closest('[role="dialog"]');
+          if (opener.current?.isConnected && opener.current !== document.body && !activeDialog?.isConnected) {
+            event.preventDefault();
+            opener.current.focus();
+          }
+        }}
         onKeyDown={(event) => {
           if (
             !["ArrowLeft", "ArrowRight"].includes(event.key) ||
