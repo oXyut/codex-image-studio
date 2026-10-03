@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, PanelRight, X } from "lucide-react";
 import { useStudio } from "@/lib/studio-context";
 import { dateLabel, imageTitle } from "@/lib/format";
@@ -14,6 +14,18 @@ import { ImageActions } from "./image-actions";
 import { ImageInspector } from "./image-inspector";
 import { ImageViewport } from "./image-viewport";
 
+const detailsPreferenceKey = "codex-image-studio.viewer-details";
+const wideLayoutQuery = "(min-width: 1024px)";
+
+function loadDetailsPreference(): boolean | null {
+  try {
+    const saved = localStorage.getItem(detailsPreferenceKey);
+    return saved === "true" ? true : saved === "false" ? false : null;
+  } catch {
+    return null;
+  }
+}
+
 export function ImageViewer({
   source,
   previous,
@@ -26,20 +38,37 @@ export function ImageViewer({
   onSource: (source: ImageSource | null) => void;
 }) {
   const studio = useStudio();
-  const [detailsOpen, setDetailsOpen] = useState(true);
+  const [detailsPreference, setDetailsPreference] = useState(loadDetailsPreference);
+  const [wideLayout, setWideLayout] = useState(
+    () => window.matchMedia(wideLayoutQuery).matches,
+  );
+  const detailsButton = useRef<HTMLButtonElement>(null);
+  const detailsOpen = detailsPreference ?? wideLayout;
   const detailsId = useId();
   const hasImage = Boolean(source?.image);
   const showDetails = detailsOpen || !hasImage;
   useEffect(() => {
-    if (!source) setDetailsOpen(true);
-  }, [source?.id]);
+    const query = window.matchMedia(wideLayoutQuery);
+    const update = () => setWideLayout(query.matches);
+    update();
+    query.addEventListener("change", update);
+    return () => query.removeEventListener("change", update);
+  }, []);
+
+  function setDetailsOpen(open: boolean) {
+    setDetailsPreference(open);
+    try {
+      localStorage.setItem(detailsPreferenceKey, String(open));
+    } catch {
+      // Keep the choice for this session even if browser storage is unavailable.
+    }
+  }
 
   return (
     <Dialog
       open={!!source}
       onOpenChange={(open) => {
         if (!open) {
-          setDetailsOpen(true);
           onSource(null);
         }
       }}
@@ -80,11 +109,12 @@ export function ImageViewer({
           <div className="flex shrink-0 items-center gap-2">
             {hasImage && (
               <Button
+                ref={detailsButton}
                 variant={detailsOpen ? "secondary" : "outline"}
                 size="sm"
                 aria-expanded={detailsOpen}
                 aria-controls={detailsId}
-                onClick={() => setDetailsOpen((open) => !open)}
+                onClick={() => setDetailsOpen(!detailsOpen)}
               >
                 <PanelRight className="size-4" />
                 詳細
@@ -95,7 +125,6 @@ export function ImageViewer({
               size="icon"
               aria-label="画像プレビューを閉じる"
               onClick={() => {
-                setDetailsOpen(true);
                 onSource(null);
               }}
             >
@@ -104,9 +133,9 @@ export function ImageViewer({
           </div>
         </header>
         {source && (
-          <div className="flex min-h-0 flex-1 flex-col md:flex-row">
+          <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
             {hasImage && (
-              <div className="flex min-h-0 min-w-0 flex-1 flex-col max-md:basis-1/2">
+              <div className="flex min-h-0 min-w-0 flex-1 flex-col">
                 <div className="relative flex min-h-0 flex-1">
                   <ImageViewport
                     key={`${source.id}:${source.image!.url}`}
@@ -148,7 +177,7 @@ export function ImageViewer({
                 aria-label="画像の詳細"
                 className={
                   hasImage
-                    ? "min-h-0 shrink-0 overflow-hidden border-t md:w-[360px] md:border-l md:border-t-0 max-md:flex-1 max-md:basis-1/2"
+                    ? "min-h-0 shrink-0 overflow-hidden border-t lg:w-[360px] lg:border-l lg:border-t-0 max-lg:basis-2/5"
                     : "min-h-0 w-full max-w-2xl flex-1 self-center"
                 }
               >
@@ -157,7 +186,10 @@ export function ImageViewer({
                   source={source}
                   mode={studio.view === "lineage" ? "lineage" : "history"}
                   showPreview={false}
-                  onClose={hasImage ? () => setDetailsOpen(false) : undefined}
+                  onClose={hasImage ? () => {
+                    setDetailsOpen(false);
+                    detailsButton.current?.focus();
+                  } : undefined}
                 />
               </aside>
             )}

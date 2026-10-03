@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { StudioContext } from "@/lib/studio-context";
 import type { ImageSource, StudioContextValue } from "@/lib/types";
 import { StudioDialogs } from "./studio-dialogs";
 
 afterEach(cleanup);
+beforeEach(() => localStorage.clear());
 
 function image(id: string, extra: Partial<ImageSource> = {}): ImageSource {
   return {
@@ -114,9 +115,7 @@ describe("拡大画像プレビュー", () => {
     const user = userEvent.setup();
     const onPreview = vi.fn();
     render(<Preview onPreview={onPreview} />);
-    expect(screen.getByRole("complementary", { name: "画像の詳細" })).toBeVisible();
-    expect(screen.getByRole("button", { name: "詳細" })).toHaveAttribute("aria-expanded", "true");
-    await user.click(screen.getByRole("button", { name: "詳細" }));
+    expect(screen.getByRole("button", { name: "詳細" })).toHaveAttribute("aria-expanded", "false");
     expect(screen.queryByRole("complementary")).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "詳細" }));
     expect(screen.getAllByRole("dialog")).toHaveLength(1);
@@ -132,6 +131,7 @@ describe("拡大画像プレビュー", () => {
     );
     expect(screen.queryByRole("complementary")).not.toBeInTheDocument();
     expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "詳細" })).toHaveFocus();
   });
 
   it("画像のない失敗履歴には同じモーダル内で診断と編集操作を表示する", () => {
@@ -160,6 +160,7 @@ describe("拡大画像プレビュー", () => {
       .spyOn(HTMLElement.prototype, "clientHeight", "get")
       .mockReturnValue(700);
     render(<Preview />);
+    await user.click(screen.getByRole("button", { name: "詳細" }));
     const img = screen.getByRole("img", { name: "二枚目" });
     Object.defineProperties(img, {
       naturalWidth: { value: 1500 },
