@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { dateLabel, statusLabels } from "@/lib/format";
 import { useStudio } from "@/lib/studio-context";
 import { cn } from "@/lib/utils";
+import { initialLineageFamily, lineageFamilies, packLineageOverview } from "@/lib/lineage-navigation";
 import {
   buildLineageDisplayEdges,
   buildLineageGraph,
@@ -48,6 +49,8 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+
+import { LineageImageList } from "./lineage-list";
 
 import type { LineageNode } from '@shared/lineage-utils.js';
 type ImageNodeData = {
@@ -258,10 +261,16 @@ export function LineageView() {
   const studio = useStudio();
   const [query, setQuery] = useState("");
   const [branchId, setBranchId] = useState("");
-  const [componentId, setComponentId] = useState("");
+  const [componentId, setComponentId] = useState<string | null>(null);
+  const [presentation, setPresentation] = useState<"graph" | "list">(() => window.matchMedia("(max-width: 767px)").matches ? "list" : "graph");
   const [compactBatches, setCompactBatches] = useState(true);
   const [expandedBatchIds, setExpandedBatchIds] = useState<Set<string>>(() => new Set());
   const [zoom, setZoom] = useState(100);
+  const [focusTarget, setFocusTarget] = useState<{ id: string; request: number } | null>(null);
+  const focusSequence = useRef(0);
+  const graphViewportRef = useRef<HTMLDivElement>(null);
+  const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
+  const listRef = useRef<HTMLDivElement>(null);
   const [flow, setFlow] = useState<ReactFlowInstance<FlowNode, Edge> | null>(
     null,
   );
@@ -273,34 +282,62 @@ export function LineageView() {
       ),
     [studio.metadata, studio.jobs],
   );
-  const visible = useMemo(
-    () =>
-      filterLineageGraph(graph, {
-        query,
-        branchId,
-        componentId,
-        batchId: studio.graphBatchId,
-      }),
-    [graph, query, branchId, componentId, studio.graphBatchId],
-  );
-  const layout = useMemo(
-    () => layoutLineageGraph(graph, visible, { compactBatches, expandedBatchIds, cardHeight }),
-    [graph, visible, compactBatches, expandedBatchIds],
-  );
-  const filters = [branchId, componentId, studio.graphBatchId].filter(
+  useEffect(() => {
+    const element = graphViewportRef.current;
+    if (!element) return;
+    const observer = new ResizeObserver(([entry]) => {
+      if (!entry || !entry.contentRect.width || !entry.contentRect.height) return;
+      const { width, height } = entry.contentRect;
+      setCanvasSize(current => current.width === width && current.height === height ? current : { width, height });
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+  const families = useMemo(() => lineageFamilies(graph), [graph]);
+  const activeFamilyId = componentId === null
+    ? (query || branchId || studio.graphBatchId ? "" : initialLineageFamily(graph, studio.selectedId))
+    : families.some(family => family.id === componentId) ? componentId : "";
+  const activeFamily = families.find(family => family.id === activeFamilyId);
+  const visible = useMemo(() => {
+    const filtered = filterLineageGraph(graph, { query, branchId, batchId: studio.graphBatchId });
+    if (!activeFamily) return filtered;
+    const ids = new Set(activeFamily.nodeIds);
+    return {
+      ...filtered,
+      nodes: filtered.nodes.filter(node => ids.has(node.id)),
+      edges: filtered.edges.filter(edge => ids.has(edge.from) && ids.has(edge.to)),
+      matchIds: new Set([...filtered.matchIds].filter(id => ids.has(id))),
+      visibleIds: new Set([...filtered.visibleIds].filter(id => ids.has(id))),
+    };
+  }, [graph, query, branchId, activeFamily, studio.graphBatchId]);
+  const layout = useMemo(() => {
+    const result = layoutLineageGraph(graph, visible, { compactBatches, expandedBatchIds, cardHeight });
+    return activeFamily ? result : packLineageOverview(graph, result);
+  }, [graph, visible, activeFamily, compactBatches, expandedBatchIds]);
+  const filters = [branchId, studio.graphBatchId].filter(
     Boolean,
   ).length;
   const uploads = graph.nodes.filter((value) => value.kind === "upload").length;
   const branches = graph.branches.filter((branch) =>
     graph.nodes.some((value) => value.branchId === branch.id),
   );
+  useEffect(() => {
+    if (studio.view === "lineage" && componentId === null && graph.nodes.length) setComponentId(activeFamilyId);
+  }, [studio.view, componentId, graph.nodes.length, activeFamilyId]);
+  useEffect(() => {
+    if (studio.graphBatchId) setComponentId("");
+  }, [studio.graphBatchId]);
   const viewportInitialized = useRef(false);
   const previousView = useRef(studio.view);
   const lastFilters = useRef("");
   const filterSignature = JSON.stringify([
     query,
     branchId,
-    componentId,
+    activeFamilyId,
+    presentation,
+    focusTarget?.request,
+    canvasSize.width,
+    canvasSize.height,
     studio.graphBatchId,
     compactBatches,
     [...expandedBatchIds].sort(),
@@ -320,11 +357,14 @@ export function LineageView() {
           title: lineageTitle(graph.nodeMap.get(group.nodeIds[0])),
           nodeCount: group.nodeIds.length,
           compact: group.compact,
-          onToggle: compactBatches ? () => setExpandedBatchIds((current) => {
-            const next = new Set(current);
-            if (next.has(group.id)) next.delete(group.id); else next.add(group.id);
-            return next;
-          }) : undefined,
+          onToggle: compactBatches ? () => {
+            setFocusTarget(null);
+            setExpandedBatchIds((current) => {
+              const next = new Set(current);
+              if (next.has(group.id)) next.delete(group.id); else next.add(group.id);
+              return next;
+            });
+          } : undefined,
         },
         style: {
           width: group.width,
@@ -404,13 +444,18 @@ export function LineageView() {
     previousView.current = studio.view;
     lastFilters.current = filterSignature;
     if (!entering && !changedFilter && !firstVisibleGraph) return;
+    const target = focusTarget;
     // The view stays mounted while hidden. Fit once it has dimensions, and never
     // reset a user's pan/zoom just because polling refreshed image metadata.
     const frame = requestAnimationFrame(() => {
+      if (target && presentation === "list") {
+        listRef.current?.querySelector<HTMLElement>(`[data-lineage-id="${target.id}"]`)?.scrollIntoView({ block: "nearest" });
+      }
       void flow.fitView({
-        padding: 0.15,
-        minZoom: 0.25,
-        maxZoom: 1,
+        ...(target && visible.visibleIds.has(target.id) ? { nodes: [{ id: target.id }] } : {}),
+        padding: target ? 0.35 : 0.15,
+        minZoom: activeFamily ? 0.75 : 0.15,
+        maxZoom: target ? 1.2 : 1,
         duration: 250,
       });
       if (visible.nodes.length) viewportInitialized.current = true;
@@ -420,23 +465,28 @@ export function LineageView() {
 
   function resetFilters() {
     setQuery("");
+    setFocusTarget(null);
     setBranchId("");
-    setComponentId("");
+    setComponentId(null);
     studio.setGraphBatchId("");
+  }
+  function chooseFamily(id: string) {
+    resetFilters();
+    setComponentId(id);
+  }
+  function showOverview() {
+    resetFilters();
+    setComponentId("");
   }
   function focusSelected() {
     if (
       !studio.selectedId ||
-      !visible.visibleIds.has(studio.selectedId) ||
       !flow
     )
       return;
-    void flow.fitView({
-      nodes: [{ id: studio.selectedId }],
-      maxZoom: 1.2,
-      padding: 0.35,
-      duration: 300,
-    });
+    const id = studio.selectedId;
+    chooseFamily(families.find(family => family.nodeIds.includes(id))?.id || "");
+    setFocusTarget({ id, request: ++focusSequence.current });
   }
   function panWithKeyboard(event: React.KeyboardEvent<HTMLDivElement>) {
     const node = (event.target as HTMLElement).closest<HTMLElement>(
@@ -488,7 +538,7 @@ export function LineageView() {
       className="flex min-h-full flex-col lg:h-full lg:min-h-0"
       aria-label="画像の系統図"
     >
-      <div className="shrink-0 border-b bg-white px-5 py-5 lg:px-7">
+      <div className="shrink-0 border-b bg-white px-4 py-3 sm:px-5 lg:px-7">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
             <h1 className="text-2xl font-semibold tracking-tight text-zinc-950">
@@ -509,6 +559,7 @@ export function LineageView() {
                   aria-pressed={compactBatches === mode.compact}
                   className={cn("h-8 px-3", compactBatches === mode.compact && "bg-indigo-50 text-indigo-800 hover:bg-indigo-100")}
                   onClick={() => {
+                    setFocusTarget(null);
                     setCompactBatches(mode.compact);
                     setExpandedBatchIds(new Set());
                   }}
@@ -526,17 +577,9 @@ export function LineageView() {
                   graph.nodes.filter((value) => value.kind !== "upload").at(-1) ||
                   graph.nodes.at(-1);
                 if (!newest) return;
-                resetFilters();
+                chooseFamily(families.find(family => family.nodeIds.includes(newest.id))?.id || "");
                 studio.select(newest.id);
-                requestAnimationFrame(
-                  () =>
-                    void flow?.fitView({
-                      nodes: [{ id: newest.id }],
-                      maxZoom: 1.2,
-                      padding: 0.35,
-                      duration: 300,
-                    }),
-                );
+                setFocusTarget({ id: newest.id, request: ++focusSequence.current });
               }}
             >
               最新の画像へ
@@ -546,13 +589,13 @@ export function LineageView() {
       </div>
       <div className="flex shrink-0 flex-col lg:min-h-0 lg:flex-1 lg:flex-row">
         <div className="flex min-w-0 shrink-0 flex-col lg:min-h-0 lg:flex-1">
-          <div className="shrink-0 space-y-4 border-b bg-white px-5 py-4 lg:px-7">
+          <div className="shrink-0 space-y-3 border-b bg-white px-4 py-3 sm:px-5 lg:px-7">
             <div className="flex flex-wrap items-center gap-3">
               <div className="relative min-w-48 flex-1">
                 <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-zinc-500" />
                 <Input
                   value={query}
-                  onChange={(event) => setQuery(event.target.value)}
+                  onChange={(event) => { setQuery(event.target.value); setFocusTarget(null); setComponentId(""); }}
                   placeholder="タイトル・プロンプトを検索"
                   aria-label="系統図を検索"
                   className="pl-9 pr-9"
@@ -568,25 +611,16 @@ export function LineageView() {
                   </button>
                 )}
               </div>
-              <div className="w-44 shrink-0">
-                <Select
-                  value={componentId || allValue}
-                  onValueChange={(value) =>
-                    setComponentId(value === allValue ? "" : value)
-                  }
-                >
-                  <SelectTrigger
-                    className="w-full"
-                    aria-label="画像の系統で絞り込む"
-                  >
-                    <SelectValue placeholder="すべての系統" />
+              <div className="min-w-48 flex-1 sm:max-w-72">
+                <Select value={activeFamilyId || allValue} onValueChange={(value) => value === allValue ? showOverview() : chooseFamily(value)}>
+                  <SelectTrigger className="w-full" aria-label="画像の系統を切り替える">
+                    <SelectValue placeholder="全系統の概要" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value={allValue}>すべての系統</SelectItem>
-                    {graph.components.map((component) => (
-                      <SelectItem key={component.id} value={component.id}>
-                        {component.title.slice(0, 24)} ·{" "}
-                        {component.nodeIds.length}枚
+                    <SelectItem value={allValue}>全系統の概要 · {families.length}系統</SelectItem>
+                    {families.map((family) => (
+                      <SelectItem key={family.id} value={family.id}>
+                        {family.title.slice(0, 24)} · {family.nodeIds.length}枚
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -609,7 +643,7 @@ export function LineageView() {
                   <FilterSelect
                     label="ブランチ"
                     value={branchId}
-                    onChange={setBranchId}
+                    onChange={(id) => { setBranchId(id); setFocusTarget(null); setComponentId(""); }}
                     choices={branches.map((branch) => ({
                       id: branch.id,
                       label: branch.name,
@@ -637,7 +671,7 @@ export function LineageView() {
                 </PopoverContent>
               </Popover>
             </div>
-            <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-zinc-600">
+            <div className="hidden flex-wrap items-center gap-x-5 gap-y-2 text-sm text-zinc-600 sm:flex">
               <span className="flex items-center gap-2">
                 <span className="w-7 border-t border-zinc-600" />
                 画像を参照
@@ -671,11 +705,50 @@ export function LineageView() {
               )}
             </div>
           </div>
+          <div className="flex shrink-0 flex-wrap items-center gap-2 border-b bg-white px-4 py-2 sm:px-5 lg:px-7">
+            <div role="group" aria-label="系統の表示形式" className="flex rounded-lg border p-0.5">
+              <Button variant="ghost" size="sm" aria-pressed={presentation === "graph"} className={cn(presentation === "graph" && "bg-zinc-100")} onClick={() => setPresentation("graph")}>系統図</Button>
+              <Button variant="ghost" size="sm" aria-pressed={presentation === "list"} className={cn(presentation === "list" && "bg-zinc-100")} onClick={() => setPresentation("list")}>リスト</Button>
+            </div>
+            <Button variant="outline" size="sm" disabled={!graph.nodes.length} aria-pressed={!activeFamilyId} onClick={showOverview}>全系統の概要</Button>
+            {activeFamily && presentation === "graph" && <Button variant="outline" size="sm" onClick={() => { setFocusTarget(null); void flow?.fitView({ minZoom: 0.75, maxZoom: 1, padding: 0.15, duration: 250 }); }}>この系統を表示</Button>}
+            <Button variant="outline" size="sm" disabled={!studio.selectedId || !graph.nodeMap.has(studio.selectedId)} onClick={focusSelected}><LocateFixed className="size-4" />選択へ</Button>
+            {presentation === "graph" && <div className="flex items-center rounded-lg border">
+              <Button variant="ghost" size="icon-sm" aria-label="系統図を縮小" onClick={() => void flow?.zoomOut({ duration: 150 })}><Minus className="size-4" /></Button>
+              <span className="min-w-12 text-center text-sm tabular-nums">{zoom}%</span>
+              <Button variant="ghost" size="icon-sm" aria-label="系統図を拡大" onClick={() => void flow?.zoomIn({ duration: 150 })}><Plus className="size-4" /></Button>
+            </div>}
+          </div>
+          <p role="status" className="shrink-0 border-b bg-zinc-50 px-4 py-2 text-sm text-zinc-600 sm:px-5 lg:px-7">
+            {activeFamily ? `${activeFamily.title} · ${visible.nodes.length}枚` : `全${families.length}系統の概要。系統を選ぶと画像と分岐を読める表示に戻ります。`}
+          </p>
+          <div className="flex min-h-0 flex-col lg:flex-1 lg:flex-row">
+            {!activeFamily && families.length > 0 && (
+              <aside aria-label="系統の一覧" className="max-h-48 shrink-0 overflow-y-auto border-b bg-white p-3 lg:max-h-none lg:w-52 lg:border-b-0 lg:border-r">
+                <p className="mb-2 text-sm font-semibold">系統を選ぶ</p>
+                <div className="grid gap-1 sm:grid-cols-2 lg:grid-cols-1">
+                  {families.map(family => <Button key={family.id} variant="ghost" className="h-auto justify-start whitespace-normal px-2 py-2 text-left" onClick={() => chooseFamily(family.id)}>
+                    <span><span className="block text-sm">{family.title}</span><span className="block text-xs font-normal text-zinc-500">{family.nodeIds.length}枚</span></span>
+                  </Button>)}
+                </div>
+              </aside>
+            )}
+            {presentation === "list" && (
+              <LineageImageList
+                graph={graph}
+                visible={visible}
+                families={activeFamily ? [activeFamily] : families}
+                selectedId={studio.selectedId}
+                onOpen={studio.openPreview}
+                listRef={listRef}
+              />
+            )}
           <div
-            className="relative h-[60dvh] min-h-[440px] shrink-0 overflow-hidden bg-zinc-50 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-zinc-400 lg:h-auto lg:min-h-0 lg:flex-1"
+            ref={graphViewportRef}
+            className={cn("relative h-[48dvh] min-h-[300px] min-w-0 shrink-0 lg:flex-1 overflow-hidden bg-zinc-50 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-zinc-400 lg:h-auto lg:min-h-0", presentation !== "graph" && "hidden")}
             role="region"
             aria-label="画像のつながり。背景をドラッグ、上下左右キーで移動できます"
-            tabIndex={0}
+            tabIndex={presentation === "graph" ? 0 : -1}
             onKeyDown={panWithKeyboard}
           >
             <ReactFlow<FlowNode, Edge>
@@ -740,64 +813,8 @@ export function LineageView() {
                 </div>
               </div>
             )}
-            <div className="pointer-events-none absolute bottom-4 left-4 right-4 flex flex-wrap items-center gap-2">
-              <div className="pointer-events-auto flex items-center rounded-lg border bg-white shadow-sm">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  aria-label="系統図を縮小"
-                  className="rounded-r-none"
-                  onClick={() => void flow?.zoomOut({ duration: 150 })}
-                >
-                  <Minus className="size-4" />
-                </Button>
-                <span
-                  className="min-w-14 border-x px-2 text-center text-sm tabular-nums"
-                  aria-live="off"
-                >
-                  {zoom}%
-                </span>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  aria-label="系統図を拡大"
-                  className="rounded-l-none"
-                  onClick={() => void flow?.zoomIn({ duration: 150 })}
-                >
-                  <Plus className="size-4" />
-                </Button>
-              </div>
-              <Button
-                variant="outline"
-                className="pointer-events-auto bg-white shadow-sm"
-                disabled={!visible.nodes.length}
-                onClick={() =>
-                  void flow?.fitView({
-                    padding: 0.15,
-                    minZoom: 0.25,
-                    maxZoom: 1,
-                    duration: 300,
-                  })
-                }
-              >
-                全体を表示
-              </Button>
-              <Button
-                variant="outline"
-                className="pointer-events-auto bg-white shadow-sm"
-                disabled={
-                  !studio.selectedId ||
-                  !visible.visibleIds.has(studio.selectedId)
-                }
-                onClick={focusSelected}
-              >
-                <LocateFixed className="size-4" />
-                選択へ
-              </Button>
-              <span className="ml-auto hidden text-sm text-zinc-500 md:inline">
-                背景をドラッグして移動
-              </span>
-            </div>
+            <span className="pointer-events-none absolute bottom-3 right-4 hidden text-xs text-zinc-500 sm:block">背景をドラッグ、矢印キーで移動</span>
+          </div>
           </div>
           {(graph.missingEdges.length > 0 || graph.cyclicEdges.length > 0) && (
             <div
