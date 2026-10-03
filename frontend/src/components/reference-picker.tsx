@@ -1,9 +1,12 @@
 import { imageTitle, isComplete } from "@/lib/format";
+import { referenceInfo } from "@/lib/reference-info";
 import { useStudio } from "@/lib/studio-context";
 import type { ImageSource, Reference } from "@/lib/types";
 import { referenceRoles } from "@shared/prompt-utils.js";
 import { uploadFileType } from "@shared/studio-features.js";
-import { Check, ImagePlus, Loader2, Search, Upload } from "lucide-react";
+import {
+  ArrowLeft, Check, ImagePlus, Loader2, Maximize2, Search, Upload,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "./ui/button";
@@ -34,14 +37,23 @@ export function ReferencePicker({
     [kind, setKind] = useState("all"),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
+    [preview, setPreview] = useState<ImageSource | null>(null),
+    [previewError, setPreviewError] = useState(false),
     [added, setAdded] = useState<ImageSource[]>([]);
+  const previewTrigger = useRef<HTMLButtonElement | null>(null);
+  const previewBack = useRef<HTMLButtonElement>(null);
   const uploadLock = useRef(false);
   useEffect(() => {
     if (open) {
       setPending(structuredClone(studio.draft.references));
       setError("");
+      setPreview(null);
     }
   }, [open]);
+  useEffect(() => {
+    if (preview) previewBack.current?.focus();
+    else previewTrigger.current?.focus();
+  }, [preview]);
   useEffect(() => {
     setAdded((previous) =>
       previous.filter(
@@ -59,8 +71,12 @@ export function ReferencePicker({
   const sources = all.filter(
     (s) =>
       (kind === "all" || (kind === "uploads") === (s.kind === "upload")) &&
-      imageTitle(s).toLocaleLowerCase().includes(query.toLocaleLowerCase()),
+      referenceInfo(s).label.toLocaleLowerCase().includes(query.toLocaleLowerCase()),
   );
+  const previewSelected = !!preview && pending.some(
+    (ref) => (ref.jobId || ref.uploadId) === preview.id,
+  );
+  const previewInfo = preview ? referenceInfo(preview) : null;
   const toggle = (source: ImageSource) => {
     setPending((current) => {
       if (current.some((ref) => (ref.jobId || ref.uploadId) === source.id))
@@ -128,20 +144,70 @@ export function ReferencePicker({
       }}
     >
       <DialogContent
-        className="flex max-h-[90dvh] flex-col sm:max-w-3xl"
+        className={`flex max-h-[90dvh] flex-col sm:max-w-3xl ${preview ? "h-[90dvh]" : ""}`}
         onEscapeKeyDown={(e) => {
           if (busy) e.preventDefault();
+          else if (preview) {
+            e.preventDefault();
+            setPreview(null);
+          }
         }}
         onPointerDownOutside={(e) => {
           if (busy) e.preventDefault();
         }}
       >
-        <DialogHeader>
+        {preview && previewInfo && (
+          <>
+            <DialogHeader className="shrink-0 pr-6 text-left">
+              <DialogTitle>参照候補を確認</DialogTitle>
+              <DialogDescription className="text-foreground">
+                {previewInfo.ordinal} · {previewInfo.unit}
+                <span className="mt-1 block text-xs text-muted-foreground">
+                  {previewInfo.timestamp}
+                </span>
+              </DialogDescription>
+              <p className="max-h-[16dvh] overflow-y-auto break-words text-sm">
+                {imageTitle(preview)}
+              </p>
+            </DialogHeader>
+            <div className="relative min-h-0 flex-1 overflow-hidden rounded-lg bg-muted/30">
+              <img
+                key={preview.id}
+                src={preview.image?.url}
+                alt={previewInfo.label}
+                className={`size-full object-contain ${previewError ? "invisible" : ""}`}
+                onError={() => setPreviewError(true)}
+              />
+              {previewError && (
+                <p role="alert" className="absolute inset-0 flex items-center justify-center bg-background/90 p-4 text-sm">
+                  画像を読み込めませんでした。選択は保持されています。
+                </p>
+              )}
+            </div>
+            <div className="flex shrink-0 flex-wrap items-center gap-2">
+              <Button ref={previewBack} variant="outline" onClick={() => setPreview(null)}>
+                <ArrowLeft className="size-4" />候補に戻る
+              </Button>
+              <Button
+                variant={previewSelected ? "secondary" : "default"}
+                aria-pressed={previewSelected}
+                aria-label={`${previewInfo.label}を${previewSelected ? "参照から外す" : "参照に選択"}`}
+                onClick={() => toggle(preview)}
+              >
+                {previewSelected && <Check className="size-4" />}
+                {previewSelected ? "参照から外す" : "参照に選択"}
+              </Button>
+              <p role="status" className="text-xs text-muted-foreground">{pending.length} / 4枚選択</p>
+            </div>
+          </>
+        )}
+        <div hidden={!!preview} className={preview ? "hidden" : "contents"}>
+        {!preview && <DialogHeader>
           <DialogTitle>参照画像を選ぶ</DialogTitle>
           <DialogDescription>
             生成済み・アップロード画像から最大4枚。入力中のプロンプトと設定を保持します。
           </DialogDescription>
-        </DialogHeader>
+        </DialogHeader>}
         <div className="flex flex-wrap items-center gap-3">
           <Tabs value={kind} onValueChange={setKind}>
             <TabsList>
@@ -205,15 +271,16 @@ export function ReferencePicker({
               const selected = pending.some(
                 (ref) => (ref.jobId || ref.uploadId) === source.id,
               );
+              const info = referenceInfo(source);
               return (
+                <div key={source.id} className="min-w-0">
                 <button
-                  key={source.id}
                   type="button"
                   disabled={busy}
                   aria-pressed={selected}
-                  aria-label={`${imageTitle(source)}を${selected ? "参照から外す" : "参照に選択"}`}
+                  aria-label={`${info.label}を${selected ? "参照から外す" : "参照に選択"}`}
                   onClick={() => toggle(source)}
-                  className={`relative min-w-0 overflow-hidden rounded-lg border-2 text-left ${selected ? "border-primary" : "border-transparent hover:border-input"}`}
+                  className={`relative w-full min-w-0 overflow-hidden rounded-lg border-2 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${selected ? "border-primary" : "border-transparent hover:border-input"}`}
                 >
                   <img
                     src={source.image?.url}
@@ -224,12 +291,29 @@ export function ReferencePicker({
                   <span className="mt-1 block truncate text-xs">
                     {imageTitle(source)}
                   </span>
+                  <span className="mt-1 block text-xs font-medium">{info.ordinal}</span>
+                  <span className="block break-words text-[11px] text-muted-foreground" title={source.batch?.id || source.id}>{info.unit}</span>
+                  <span className="block text-[11px] text-muted-foreground">{info.timestamp}</span>
                   {selected && (
                     <span className="absolute right-2 top-2 rounded-full bg-primary p-1 text-white">
                       <Check className="size-3" />
                     </span>
                   )}
                 </button>
+                <Button
+                  variant="outline"
+                  className="mt-1 w-full"
+                  disabled={busy}
+                  aria-label={`${info.label}を大きく確認`}
+                  onClick={(event) => {
+                    previewTrigger.current = event.currentTarget;
+                    setPreviewError(false);
+                    setPreview(source);
+                  }}
+                >
+                  <Maximize2 className="size-3.5" />大きく確認
+                </Button>
+                </div>
               );
             })}
           </div>
@@ -244,15 +328,16 @@ export function ReferencePicker({
           )}
         </div>
         {!!pending.length && (
-          <div className="space-y-2 border-t pt-3">
+          <div className="max-h-[22dvh] shrink-0 space-y-2 overflow-y-auto border-t pt-3">
             {pending.map((ref) => {
               const id = ref.jobId || ref.uploadId,
                 source = all.find((s) => s.id === id);
               return (
                 <div key={id} className="flex min-w-0 items-center gap-3">
-                  <span className="flex-1 truncate text-xs">
-                    {source ? imageTitle(source) : "参照画像"}
-                  </span>
+                  <div className="min-w-0 flex-1 text-xs">
+                    <p className="truncate">{source ? imageTitle(source) : "参照画像"}</p>
+                    {source && <p className="text-[11px] text-muted-foreground">{referenceInfo(source).ordinal} · {referenceInfo(source).unit}</p>}
+                  </div>
                   <Select
                     value={ref.role}
                     onValueChange={(role) =>
@@ -264,7 +349,7 @@ export function ReferencePicker({
                     }
                   >
                     <SelectTrigger
-                      aria-label={`${source ? imageTitle(source) : "参照画像"}の役割`}
+                      aria-label={`${source ? referenceInfo(source).label : "参照画像"}の役割`}
                       className="h-8 w-32"
                     >
                       <SelectValue />
@@ -282,7 +367,7 @@ export function ReferencePicker({
             })}
           </div>
         )}
-        <DialogFooter className="items-center">
+        <DialogFooter className="shrink-0 flex-row flex-wrap items-center">
           <p className="mr-auto text-sm text-muted-foreground">
             {pending.length} / 4枚選択
           </p>
@@ -303,6 +388,7 @@ export function ReferencePicker({
             選択を反映
           </Button>
         </DialogFooter>
+        </div>
       </DialogContent>
     </Dialog>
   );
