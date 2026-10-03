@@ -9,12 +9,14 @@ import { dateLabel, statusLabels } from "@/lib/format";
 import { useStudio } from "@/lib/studio-context";
 import { cn } from "@/lib/utils";
 import {
+  buildLineageDisplayEdges,
   buildLineageGraph,
   compactBatchGeometry,
   filterLineageGraph,
   layoutLineageGraph,
   lineageBatchEdgePath,
   lineageBatchLabel,
+  lineageBatchNodeId,
   lineageTitle,
 } from "@shared/lineage-utils.js";
 import {
@@ -176,6 +178,13 @@ function BatchNode({ data }: NodeProps<FlowBatchNode>) {
       className="relative h-full w-full rounded-xl border border-dashed border-indigo-200 bg-indigo-50/45 px-3 py-2"
       title={`${lineageBatchLabel(data.batchId)} · 表示 ${data.visibleCount} / 全 ${data.count}${data.deletedCount ? ` · 削除 ${data.deletedCount}` : ""}。同時作成は参照・親子関係とは別のグループです。`}
     >
+      {data.compact && (
+        <Handle
+          type="target"
+          position={Position.Left}
+          className="!size-1 !border-0 !bg-zinc-500 !opacity-0"
+        />
+      )}
       <p className="flex items-center gap-2 whitespace-nowrap text-sm font-medium text-zinc-600">
         <span className="size-4 rounded border border-indigo-200 bg-white/80" />
         同時作成 · {data.count}枚
@@ -299,8 +308,8 @@ export function LineageView() {
 
   const flowNodes = useMemo<FlowNode[]>(() => {
     return [
-      ...layout.batchGroups.map((group, index): FlowBatchNode => ({
-        id: `batch:${group.id}:${index}`,
+      ...layout.batchGroups.map((group): FlowBatchNode => ({
+        id: lineageBatchNodeId(group),
         type: "batch",
         position: { x: group.x, y: group.y },
         data: {
@@ -351,28 +360,34 @@ export function LineageView() {
   const flowEdges = useMemo<Edge[]>(
     () => {
       const batchByNode = new Map(layout.batchGroups.flatMap((group) => group.nodeIds.map((id) => [id, group] as const)));
-      return visible.edges.map((edge, index) => ({
-        id: `${edge.kind}:${edge.from}:${edge.to}:${index}`,
-        source: edge.from,
-        target: edge.to,
-        type: "batch",
-        data: { path: lineageBatchEdgePath(layout.positions.get(edge.from)!, layout.positions.get(edge.to)!, batchByNode.get(edge.from), batchByNode.get(edge.to)) },
-        zIndex: 1,
-        selectable: false,
-        focusable: false,
-        markerEnd: {
-          type: MarkerType.ArrowClosed,
-          width: 16,
-          height: 16,
-          color: edge.to === studio.selectedId ? "#18181b" : "#71717a",
-        },
-        style: {
-          stroke: edge.to === studio.selectedId ? "#18181b" : "#71717a",
-          strokeWidth: edge.to === studio.selectedId ? 2 : 1.5,
-          ...(edge.kind === "source" ? { strokeDasharray: "6 5" } : {}),
-        },
-        ariaLabel: `${lineageTitle(graph.nodeMap.get(edge.from))}から${lineageTitle(graph.nodeMap.get(edge.to))}への${edge.label}`,
-      }));
+      return buildLineageDisplayEdges(visible.edges, layout.batchGroups).map((edge, index) => {
+        const selected = edge.targetIds.some((id) => id === studio.selectedId);
+        const targetTitle = edge.targetGroup
+          ? `${lineageBatchLabel(edge.targetGroup.id)}（表示${edge.targetIds.length}枚）`
+          : lineageTitle(graph.nodeMap.get(edge.to));
+        return {
+          id: `${edge.kind}:${edge.from}:${edge.to}:${index}`,
+          source: edge.from,
+          target: edge.to,
+          type: "batch",
+          data: { path: lineageBatchEdgePath(layout.positions.get(edge.from)!, edge.targetGroup ?? layout.positions.get(edge.to)!, batchByNode.get(edge.from), edge.targetGroup ? undefined : batchByNode.get(edge.to)) },
+          zIndex: 1,
+          selectable: false,
+          focusable: false,
+          markerEnd: {
+            type: MarkerType.ArrowClosed,
+            width: 16,
+            height: 16,
+            color: selected ? "#18181b" : "#71717a",
+          },
+          style: {
+            stroke: selected ? "#18181b" : "#71717a",
+            strokeWidth: selected ? 2 : 1.5,
+            ...(edge.kind === "source" ? { strokeDasharray: "6 5" } : {}),
+          },
+          ariaLabel: `${lineageTitle(graph.nodeMap.get(edge.from))}から${targetTitle}への${edge.label}`,
+        };
+      });
     },
     [visible.edges, graph, layout, studio.selectedId],
   );

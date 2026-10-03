@@ -234,17 +234,18 @@ describe("LineageView", () => {
         .filter((node) => node.type === "image")
         .map((node) => node.id),
     ).toEqual(["upload", "parent", "source", "child"]);
+    const batchNode = flowMocks.nodes.find((node) => node.type === "batch")!;
     expect(
-      flowMocks.edges.filter((edge) => edge.target === child.id),
+      flowMocks.edges.filter((edge) => edge.target === batchNode.id),
     ).toHaveLength(3);
     expect(
       flowMocks.edges.find(
-        (edge) => edge.source === source.id && edge.target === child.id,
+        (edge) => edge.source === source.id && edge.target === batchNode.id,
       )?.style?.strokeDasharray,
     ).toBe("6 5");
     expect(
       flowMocks.edges.find(
-        (edge) => edge.source === uploaded.id && edge.target === child.id,
+        (edge) => edge.source === uploaded.id && edge.target === batchNode.id,
       )?.style?.strokeDasharray,
     ).toBeUndefined();
     expect(
@@ -367,5 +368,43 @@ describe("LineageView", () => {
     fireEvent.change(screen.getByRole("textbox", { name: "系統図を検索" }), { target: { value: "状態 0" } });
     expect(screen.getByText("表示 1 / 4枚 · 削除 1枚")).toBeInTheDocument();
     expect(flowMocks.nodes.filter((node) => node.type === "image").map((node) => node.id)).toEqual(["state-0"]);
+  });
+
+  it("共通の参照元・入力元からは枠へ1本ずつ接続し、展開すると各画像への矢印を復元する", async () => {
+    const batch = { id: "shared-variants", count: 4 };
+    const variants = [1, 2, 3, 4].map((index) => ({
+      ...child, id: `shared-${index}`, prompt: `共通の別案 ${index}`, batch: { ...batch, index },
+    }));
+    const leaf: ImageSource = {
+      ...parent, id: "leaf", prompt: "派生画像", references: [{ jobId: variants[1].id, role: "reference" }],
+    };
+    const studio = context({ jobs: [parent, source, ...variants, leaf], selectedId: variants[3].id });
+    const user = userEvent.setup();
+    render(view(studio));
+    const batchNode = flowMocks.nodes.find((node) => node.type === "batch")!;
+    const common = flowMocks.edges.filter((edge) => edge.target === batchNode.id);
+    expect(common).toHaveLength(3);
+    expect(common.map((edge) => edge.source)).toEqual([parent.id, uploaded.id, source.id]);
+    expect(common.every((edge) => edge.style?.strokeWidth === 2)).toBe(true);
+    expect(common.find((edge) => edge.source === source.id)?.style?.strokeDasharray).toBe("6 5");
+    expect(common.find((edge) => edge.source === parent.id)?.style?.strokeDasharray).toBeUndefined();
+    expect(common.every((edge) => edge.ariaLabel?.includes("同時作成 #shared（表示4枚）"))).toBe(true);
+    expect(common.every((edge) => (edge.data?.path as string).endsWith(
+      `${batchNode.position.x} ${batchNode.position.y + Number(batchNode.style?.height) / 2}`,
+    ))).toBe(true);
+    expect(flowMocks.edges.filter((edge) => edge.source === variants[1].id && edge.target === leaf.id)).toHaveLength(1);
+    expect(flowMocks.edges).toHaveLength(5);
+
+    await user.click(screen.getByRole("button", { name: /同時作成 #sharedを展開/ }));
+    expect(flowMocks.edges).toHaveLength(14);
+    expect(flowMocks.edges.some((edge) => edge.target === batchNode.id)).toBe(false);
+    for (const image of variants) expect(flowMocks.edges.filter((edge) => edge.target === image.id)).toHaveLength(3);
+
+    await user.click(screen.getByRole("button", { name: /同時作成 #sharedをまとめて表示/ }));
+    expect(flowMocks.edges).toHaveLength(5);
+    await user.click(screen.getByRole("button", { name: "個別表示" }));
+    expect(flowMocks.edges).toHaveLength(14);
+    await user.click(screen.getByRole("button", { name: "まとめて表示" }));
+    expect(flowMocks.edges).toHaveLength(5);
   });
 });

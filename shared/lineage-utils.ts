@@ -24,6 +24,7 @@ export type BatchGroup = {
   id: string; nodeIds: string[]; x: number; y: number; width: number; height: number;
   count: number; visibleCount: number; deletedCount: number; compact: boolean;
 };
+export type LineageDisplayEdge = LineageEdge & { targetIds: string[]; targetGroup?: BatchGroup };
 type LayoutOptions = { compactBatches?: boolean; expandedBatchIds?: ReadonlySet<string>; cardHeight?: number };
 export type GraphLayout = ReturnType<typeof layoutLineageGraph>;
 export const lineageOperationNames: Record<string, string> = { generate: '新規生成', derive: '参照から生成', edit: '入力を編集', regenerate: '再生成', upload: '参照の起点' };
@@ -202,9 +203,38 @@ export function layoutLineageGraph<T extends GraphImage>(graph: LineageGraph<T>,
   return { ...graphGeometry, cardHeight, positions, groups, batchGroups, width: Math.max(480, right + padding), height: Math.max(280, top - componentGap + padding) };
 }
 
+export function lineageBatchNodeId(group: BatchGroup) { return `batch:${group.id}:${group.nodeIds[0]}`; }
+
+// Only shared incoming connections terminate at a compact frame. Exceptional
+// relationships and outgoing connections still identify their actual image.
+export function buildLineageDisplayEdges(edges: LineageEdge[], batchGroups: BatchGroup[]): LineageDisplayEdge[] {
+  const groupByNode = new Map(batchGroups.filter(group => group.compact).flatMap(group => group.nodeIds.map(id => [id, group] as const)));
+  const connections = new Map<BatchGroup, Map<string, LineageEdge[]>>();
+  for (const edge of edges) {
+    const group = groupByNode.get(edge.to);
+    if (!group) continue;
+    if (!connections.has(group)) connections.set(group, new Map());
+    const incoming = connections.get(group)!;
+    const key = JSON.stringify([edge.from, edge.kind, edge.label]);
+    if (!incoming.has(key)) incoming.set(key, []);
+    incoming.get(key)!.push(edge);
+  }
+  const replacements = new Map<LineageEdge, LineageDisplayEdge | null>();
+  for (const [group, incoming] of connections) for (const related of incoming.values()) {
+    if (new Set(related.map(edge => edge.to)).size !== group.nodeIds.length) continue;
+    for (const edge of related) replacements.set(edge, null);
+    replacements.set(related[0], { ...related[0], to: lineageBatchNodeId(group), targetIds: [...group.nodeIds], targetGroup: group });
+  }
+  return edges.flatMap(edge => {
+    if (!replacements.has(edge)) return [{ ...edge, targetIds: [edge.to] }];
+    const replacement = replacements.get(edge);
+    return replacement ? [replacement] : [];
+  });
+}
+
 // Route connections through grid gutters, so a left-column image never draws a
 // derivation through its right-hand peer and a right-column target stays identifiable.
-export function lineageBatchEdgePath(from: GraphPosition, to: GraphPosition, sourceGroup?: BatchGroup, targetGroup?: BatchGroup) {
+export function lineageBatchEdgePath(from: Pick<GraphPosition, 'x' | 'y' | 'width' | 'height'>, to: Pick<GraphPosition, 'x' | 'y' | 'width' | 'height'>, sourceGroup?: BatchGroup, targetGroup?: BatchGroup) {
   const start = { x: from.x + from.width, y: from.y + from.height / 2 };
   const end = { x: to.x, y: to.y + to.height / 2 };
   const halfGap = compactBatchGeometry.gap / 2;
