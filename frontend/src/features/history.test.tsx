@@ -1,12 +1,18 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { useState } from "react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { StudioContext } from "@/lib/studio-context";
 import type { ImageSource, StudioContextValue } from "@/lib/types";
 import { HistoryView } from "./history";
 import { ApiError } from "@/lib/api";
+import { ImageViewer } from "@/components/image-viewer";
 
-afterEach(cleanup);
+beforeEach(() => localStorage.removeItem("codex-image-studio.history-density"));
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
 function job(id: string, extra: Partial<ImageSource> = {}): ImageSource {
   return {
     id,
@@ -33,6 +39,7 @@ function studio(jobs: ImageSource[]): StudioContextValue {
     openPreview: vi.fn(),
     navigate: vi.fn(),
     addReference: vi.fn().mockReturnValue(true),
+    replaceFromSource: vi.fn(),
     openTrash: vi.fn(),
     api: vi.fn(),
     refresh: vi.fn().mockResolvedValue(undefined),
@@ -114,6 +121,102 @@ describe("生成履歴", () => {
     await user.click(screen.getByRole("button", { name: "条件を解除" }));
     await user.click(screen.getByRole("button", { name: "履歴の操作" }));
     expect(screen.getByRole("menuitem", { name: "エラー画像を一括削除（0件）" })).toHaveAttribute("data-disabled");
+  });
+
+  it("失敗の詳細をEscapeで閉じると、履歴で開いたボタンへフォーカスを戻す", async () => {
+    const failed = job("失敗した画像", { status: "failed", image: undefined, error: "タイムアウトしました。" });
+    const context = studio([failed]);
+    function HistoryWithViewer() {
+      const [preview, setPreview] = useState<ImageSource | null>(null);
+      return <StudioContext.Provider value={{ ...context, openPreview: setPreview }}>
+        <HistoryView />
+        <ImageViewer source={preview} previous={null} next={null} onSource={setPreview} />
+      </StudioContext.Provider>;
+    }
+    const user = userEvent.setup();
+    render(<HistoryWithViewer />);
+    const opener = screen.getByRole("button", { name: "失敗した画像を選択" });
+    await user.click(opener);
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    await waitFor(() => expect(opener).toHaveFocus());
+  });
+
+  it("表示密度をキーボードで切り替え、再表示後も選択を保持する", async () => {
+    const context = studio([job("比較画像")]);
+    const user = userEvent.setup();
+    const view = <StudioContext.Provider value={context}><HistoryView /></StudioContext.Provider>;
+    const { unmount } = render(view);
+    const controls = screen.getByRole("group", { name: "履歴の表示密度" });
+    expect(within(controls).getByRole("button", { name: "大きく表示" })).toHaveAttribute("aria-pressed", "true");
+    const compact = within(controls).getByRole("button", { name: "コンパクト" });
+    compact.focus();
+    await user.keyboard("{Enter}");
+    expect(compact).toHaveFocus();
+    expect(compact).toHaveAttribute("aria-pressed", "true");
+    expect(localStorage.getItem("codex-image-studio.history-density")).toBe("compact");
+    unmount();
+    render(view);
+    expect(screen.getByRole("button", { name: "コンパクト" })).toHaveAttribute("aria-pressed", "true");
+    await user.click(screen.getByRole("button", { name: "大きく表示" }));
+    expect(localStorage.getItem("codex-image-studio.history-density")).toBe("large");
+    expect(context.openPreview).not.toHaveBeenCalled();
+  });
+
+  it("コンパクト表示でも検索・完成・お気に入り・同時作成の件数を保つ", async () => {
+    const first = job("森の朝", { favorite: true, batch: { id: "forest", index: 1, count: 2 } });
+    const second = job("森の失敗", { status: "failed", image: undefined, batch: { id: "forest", index: 2, count: 2 } });
+    const context = studio([first, second, job("夜")]);
+    const user = userEvent.setup();
+    render(<StudioContext.Provider value={context}><HistoryView /></StudioContext.Provider>);
+    await user.type(screen.getByRole("searchbox", { name: "履歴を検索" }), "森");
+    await user.click(screen.getByRole("button", { name: "完成" }));
+    await user.click(screen.getByRole("button", { name: "お気に入りのみ" }));
+    await user.click(screen.getByRole("button", { name: "コンパクト" }));
+    expect(screen.getByRole("searchbox", { name: "履歴を検索" })).toHaveValue("森");
+    expect(screen.getByRole("button", { name: "完成" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "お気に入りのみ" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByText("表示 1枚 / 保存 2枚")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "森の朝を選択" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "森の失敗を選択" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "夜を選択" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "大きく表示" }));
+    expect(screen.getByText("1枚を表示 / 全3枚")).toBeInTheDocument();
+  });
+
+  it("失敗は画像枠を作らず、原因・入力の復元・詳細・右クリック操作を保つ", async () => {
+    const failed = job("失敗した画像", {status: "failed", image: undefined, error: {code: "TIMEOUT", message: "画像生成がタイムアウトしました。"}});
+    const context = studio([failed, job("成功した画像")]);
+    const user = userEvent.setup();
+    render(<StudioContext.Provider value={context}><HistoryView /></StudioContext.Provider>);
+    const card = screen.getByRole("article", { name: "失敗した画像" });
+    expect(within(card).getByText("エラー")).toBeInTheDocument();
+    expect(within(card).getByText("画像生成がタイムアウトしました。")).toBeInTheDocument();
+    expect(within(card).queryByRole("img")).not.toBeInTheDocument();
+    expect(card.querySelector('[class*="aspect-"]')).toBeNull();
+    await user.click(within(card).getByRole("button", { name: "内容を編集して再試行" }));
+    expect(context.replaceFromSource).toHaveBeenCalledExactlyOnceWith(failed);
+    expect(context.api).not.toHaveBeenCalled();
+    expect(context.openPreview).not.toHaveBeenCalled();
+    await user.click(within(card).getByRole("button", { name: "失敗した画像を選択" }));
+    expect(context.openPreview).toHaveBeenCalledExactlyOnceWith(failed);
+    fireEvent.contextMenu(card);
+    expect(screen.getByRole("menuitem", { name: "元の入力に置き換えて編集" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "画像と下流をゴミ箱へ" })).toBeInTheDocument();
+  });
+
+  it("保存先が使えなくても密度の切り替えと空履歴の導線を使える", async () => {
+    vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => { throw new Error("unavailable"); });
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("unavailable"); });
+    const context = studio([]);
+    const user = userEvent.setup();
+    render(<StudioContext.Provider value={context}><HistoryView /></StudioContext.Provider>);
+    await user.click(screen.getByRole("button", { name: "コンパクト" }));
+    expect(screen.getByRole("button", { name: "コンパクト" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByText("生成した画像がここに並びます")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "制作画面へ" }));
+    expect(context.navigate).toHaveBeenCalledWith("create");
   });
 
   it("別のカードを右クリックしても詳細を開かず、そのカードを参照に追加する", async () => {

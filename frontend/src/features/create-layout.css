@@ -1,0 +1,92 @@
+/* A full-width preview with one shared scroll area at tablet/laptop widths. */
+@media (min-width: 768px) and (max-width: 1279px) {
+  .studio-shell[data-view="create"] > aside {
+    width: 96px;
+  }
+  .studio-shell[data-view="create"] > aside > div:first-child {
+    align-items: center;
+    padding: 20px 8px;
+  }
+  .studio-shell[data-view="create"] > aside > div:first-child > div,
+  .studio-shell[data-view="create"] > aside > div:last-child {
+    display: none;
+  }
+  .studio-shell[data-view="create"] > aside > nav {
+    padding-inline: 8px;
+  }
+  .studio-shell[data-view="create"] > aside > nav > button {
+    height: 64px;
+    flex-direction: column;
+    justify-content: center;
+    gap: 4px;
+    padding: 4px;
+    font-size: 12px;
+  }
+  .studio-shell[data-view="create"] > aside > a {
+    margin: 20px 8px;
+    text-align: center;
+    font-size: 12px;
+  }
+  .create-workspace {
+    flex-direction: column;
+    overflow-y: auto;
+    padding-bottom: 120px;
+  }
+  .create-input {
+    width: 100%;
+    border-right: 0;
+    border-bottom-width: 1px;
+  }
+  .create-input-summary {
+    display: flex;
+  }
+  .create-input-fields {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 16px;
+    padding: 16px;
+    overflow: visible;
+  }
+  .create-input-fields > * {
+    min-width: 0;
+    margin: 0;
+  }
+  .create-prompt {
+    grid-row: span 2;
+  }
+  .create-prompt textarea {
+    min-height: 112px;
+  }
+  .create-input-collapsed {
+    display: none;
+  }
+  .create-submit {
+    position: fixed;
+    left: 96px;
+    right: 0;
+    display: grid;
+    grid-template-columns: 168px minmax(0, 1fr);
+    gap: 8px 16px;
+    padding: 12px 16px;
+  }
+  .create-submit > * {
+    margin: 0;
+  }
+  .create-submit > p,
+  .create-submit > button:last-child {
+    grid-column: 1 / -1;
+  }
+  .create-result {
+    flex: 1 0 auto;
+    min-height: 420px;
+  }
+  .create-result [aria-label="生成結果の画像"] {
+    max-height: max(240px, calc(100dvh - 400px));
+  }
+  .create-result [aria-label="生成結果の画像"] img {
+    max-height: 100%;
+  }
+  .create-result [aria-label="画像の操作"] {
+    flex-wrap: nowrap;
+  }
+}

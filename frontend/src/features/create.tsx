@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { dateLabel, imageTitle, statusLabels, styleLabels } from "@/lib/format";
+import { draftMatchesSource, previewOrigin } from "@/lib/create-preview";
 import { useStudio } from "@/lib/studio-context";
 import { cn } from "@/lib/utils";
 import { canvasSizeLabel } from "@shared/canvas-options.js";
@@ -29,9 +30,10 @@ import {
   Undo2,
   X,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { TemplatePicker } from "./templates";
 import { GenerationRecovery } from "@/components/generation-recovery";
+import "./create-layout.css";
 const examples = [
   "朝のやわらかな光が差し込む、静かな森。木々の間に薄い霧が漂う。自然な写真の質感。",
   "白い背景に置いた、シンプルなガラスの香水ボトル。やわらかな影、スタジオ撮影。",
@@ -49,9 +51,18 @@ export function CreateView({
     [uploading, setUploading] = useState(false),
     [promptOpen, setPromptOpen] = useState(false),
     [exampleOpen, setExampleOpen] = useState(false);
+  const [inputOpen, setInputOpen] = useState(true);
+  useEffect(() => {
+    // Source-image edit actions must reveal the restored input at compact widths.
+    if (d.lineageContext) setInputOpen(true);
+  }, [d.lineageContext]);
   const fullPrompt = composePrompt(d.prompt, d.layers),
     source =
       studio.jobs.find((j) => j.id === studio.selectedId) || studio.jobs[0];
+  const recentGeneration = studio.jobs.filter((job) =>
+    (studio.recentGenerationIds || []).includes(job.id),
+  );
+  const showingRecentGeneration = source && recentGeneration.some((job) => job.id === source.id);
   const siblings = source?.batch
     ? studio.jobs
         .filter((j) => j.batch?.id === source.batch?.id)
@@ -102,13 +113,39 @@ export function CreateView({
           )}
         </div>
       </header>
-      <div className="flex min-h-0 flex-1 flex-col md:flex-row">
+      <div className="create-workspace flex min-h-0 flex-1 flex-col md:flex-row">
         <section
           aria-label="制作の入力"
-          className="flex w-full shrink-0 flex-col border-b bg-white md:w-[320px] md:border-b-0 md:border-r lg:w-[360px]"
+          className="create-input flex w-full shrink-0 flex-col border-b bg-white md:w-[320px] md:border-b-0 md:border-r lg:w-[360px]"
         >
-          <div className="flex-1 space-y-6 overflow-y-auto p-5 lg:p-7">
-            <div>
+          <div className="create-input-summary hidden items-center gap-3 border-b p-4">
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm" title={d.prompt}>
+                {d.prompt.trim() || "プロンプトを入力して画像をつくる"}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                テンプレート {d.layers.length}件 · 参照画像 {d.references.length}件
+              </p>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              aria-expanded={inputOpen}
+              aria-controls="create-input-fields"
+              onClick={() => setInputOpen((open) => !open)}
+            >
+              <SlidersHorizontal />
+              {inputOpen ? "入力を閉じる" : "入力を編集"}
+            </Button>
+          </div>
+          <div
+            id="create-input-fields"
+            className={cn(
+              "create-input-fields flex-1 space-y-6 overflow-y-auto p-5 lg:p-7",
+              !inputOpen && "create-input-collapsed",
+            )}
+          >
+            <div className="create-prompt">
               <div className="mb-2 flex items-center justify-between">
                 <label htmlFor="prompt" className="font-medium">
                   プロンプト
@@ -468,7 +505,7 @@ export function CreateView({
               </div>
             )}
           </div>
-          <div className="fixed bottom-0 left-0 right-0 z-10 space-y-3 border-t bg-white p-5 md:sticky md:left-auto md:right-auto lg:p-6">
+          <div className="create-submit fixed bottom-0 left-0 right-0 z-10 space-y-3 border-t bg-white p-5 md:sticky md:left-auto md:right-auto lg:p-6">
             <div className="flex items-center justify-between">
               <label className="font-medium" htmlFor="generation-count">
                 生成枚数
@@ -535,12 +572,12 @@ export function CreateView({
         </section>
         <section
           aria-label="生成結果"
-          className="studio-result flex min-h-[540px] min-w-0 flex-1 flex-col bg-[#fafafa] md:min-h-0"
+          className="create-result studio-result flex min-h-[540px] min-w-0 flex-1 flex-col bg-[#fafafa] md:min-h-0"
         >
-          <header className="flex min-h-16 items-center justify-between gap-3 border-b bg-white px-5 lg:px-7">
-            <div>
+          <header className="flex min-h-16 flex-wrap items-center justify-between gap-3 border-b bg-white px-5 py-3 lg:px-7">
+            <div className="min-w-0 flex-1 basis-40">
               <h2 className="font-medium">
-                {source?.batch ? "生成結果" : "プレビュー"}
+                {source ? previewOrigin(source, studio.selectedId, studio.recentGenerationIds || []) : "生成結果"}
               </h2>
               <p className="text-xs text-muted-foreground">
                 {source
@@ -584,8 +621,58 @@ export function CreateView({
             )}
           </header>
           <div className="flex min-h-0 flex-1 flex-col items-center justify-start p-5 lg:p-7">
+            {studio.submitting && (
+              <p role="status" className="mb-4 w-full max-w-4xl rounded-lg border bg-white p-3 text-sm">
+                新しい生成を開始しています。{source && "下の表示は開始前の履歴です。"}
+              </p>
+            )}
+            {!studio.submitting && !showingRecentGeneration && recentGeneration.length > 0 && (
+              <div role="status" className="mb-4 flex w-full max-w-4xl flex-wrap items-center justify-between gap-2 rounded-lg border bg-white p-3 text-sm">
+                <p>
+                  今回の生成：完成 {recentGeneration.filter((job) => job.status === "succeeded").length}/{recentGeneration.length}枚
+                  {recentGeneration.some((job) => ["queued", "running"].includes(job.status)) ? " · 進行中" : " · 終了"}
+                  {["failed", "cancelled"].map((status) => {
+                    const count = recentGeneration.filter((job) => job.status === status).length;
+                    return count ? ` · ${statusLabels[status]} ${count}枚` : "";
+                  })}
+                  <span className="mt-1 block text-xs text-muted-foreground">下には過去の履歴を表示しています。</span>
+                </p>
+                <Button variant="outline" size="sm" onClick={() => studio.select(recentGeneration[0].id)}>
+                  今回の生成を見る
+                </Button>
+              </div>
+            )}
             {source ? (
               <>
+                <div className="mb-4 w-full max-w-4xl min-w-0 space-y-2">
+                  <h3 className="break-words text-base font-medium">{imageTitle(source)}</h3>
+                  <p className="text-xs text-muted-foreground">
+                    {draftMatchesSource(d, source)
+                      ? "現在の下書きと生成時の入力は同じです。"
+                      : "現在の下書きと生成時の入力は異なります。"}
+                    {source.image ? " 表示中の画像は、この履歴に保存された結果です。" : " この履歴の状態を表示しています。"}
+                  </p>
+                  <details key={source.id} className="rounded-lg border bg-white text-sm">
+                    <summary className="cursor-pointer rounded-lg px-3 py-2 focus-visible:outline-2 focus-visible:outline-ring">この履歴の元の入力を確認</summary>
+                    <div className="max-h-60 space-y-3 overflow-y-auto border-t p-3">
+                      <p className="text-xs text-muted-foreground">生成時の合成プロンプト</p>
+                      <p className="whitespace-pre-wrap break-words">{source.prompt || composePrompt(source.basePrompt || "", source.layers) || "入力の記録がありません。"}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {canvasSizeLabel(source.size, { full: true })} · {styleLabels[source.style || "auto"]} · {source.transparent ? "透過あり" : "透過なし"}
+                      </p>
+                      {Boolean(source.references?.length) && (
+                        <div className="space-y-1">
+                          <p className="text-xs text-muted-foreground">参照画像</p>
+                          {source.references!.map((reference) => {
+                            const id = reference.jobId || reference.uploadId;
+                            const referenceSource = sources.find((item) => item.id === id);
+                            return <p key={id} className="break-words">{referenceSource ? imageTitle(referenceSource) : "参照画像の記録がありません"} · {referenceRoles.find(([role]) => role === reference.role)?.[1] || reference.role}</p>;
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  </details>
+                </div>
                 <ImageContextMenu source={source}>
                   <div
                     tabIndex={0}
@@ -593,7 +680,7 @@ export function CreateView({
                     className={cn(
                       "relative flex min-h-0 w-full max-w-4xl rounded-lg border bg-white shadow-sm",
                       source.image
-                        ? "aspect-[3/2] items-center justify-center overflow-hidden"
+                        ? "aspect-[3/2] min-h-40 items-center justify-center overflow-hidden"
                         : "shrink-0 p-5 sm:p-6",
                     )}
                   >
@@ -602,7 +689,7 @@ export function CreateView({
                         <img
                           src={source.image.url}
                           alt={imageTitle(source)}
-                          className={`max-h-[calc(100dvh-360px)] min-h-40 max-w-full object-contain ${source.transparent ? "checkerboard" : ""}`}
+                          className={`size-full object-contain ${source.transparent ? "checkerboard" : ""}`}
                         />
                         <Button
                           variant="secondary"

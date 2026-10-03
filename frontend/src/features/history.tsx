@@ -15,10 +15,13 @@ import {
   ArrowRight,
   Check,
   Clock,
+  Columns2,
+  Grid2X2,
   ImageIcon,
   ImagePlus,
   LoaderCircle,
   MoreHorizontal,
+  Pencil,
   Search,
   SlidersHorizontal,
   Star,
@@ -28,6 +31,8 @@ import {
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 
 type HistoryFilter = "all" | "complete" | "active" | "failed" | "cancelled";
+type HistoryDensity = "large" | "compact";
+const historyDensityKey = "codex-image-studio.history-density";
 type HistoryGroup = {
   kind: "batch" | "single";
   id: string;
@@ -54,6 +59,60 @@ function HistoryCard({
   const studio = useStudio();
   const selected = studio.selectedId === source.id;
   const active = ["running", "queued"].includes(source.status);
+  if (source.status === "failed") {
+    return (
+      <ImageContextMenu source={source}>
+        <article
+          aria-label={imageTitle(source)}
+          className={cn(
+            "min-w-0 rounded-xl border bg-muted/20 p-4",
+            selected && "ring-2 ring-foreground ring-offset-2",
+          )}
+        >
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <Badge variant="destructive">{statusLabels.failed}</Badge>
+            <h3 className="min-w-0 break-words text-sm font-medium">
+              {source.batch ? `${source.batch.index}. ` : ""}
+              {imageTitle(source)}
+            </h3>
+            <time
+              className="text-xs text-muted-foreground"
+              dateTime={source.createdAt}
+            >
+              {dateLabel(source.createdAt)}
+            </time>
+          </div>
+          <div className="mt-2 flex flex-col gap-3">
+            <p
+              className="min-w-0 flex-1 line-clamp-2 break-words text-sm text-muted-foreground"
+              title={errorMessage(source)}
+            >
+              {errorMessage(source)}
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                variant="outline"
+                className="h-auto min-h-9 whitespace-normal py-2"
+                onClick={() => studio.replaceFromSource(source)}
+              >
+                <Pencil className="size-4" />
+                内容を編集して再試行
+              </Button>
+              <Button
+                variant="ghost"
+                onClick={onSelect}
+                aria-label={`${imageTitle(source)}を選択`}
+                aria-haspopup="dialog"
+                aria-pressed={selected}
+              >
+                詳細
+              </Button>
+            </div>
+          </div>
+        </article>
+      </ImageContextMenu>
+    );
+  }
   return (
     <ImageContextMenu source={source}>
       <article className="min-w-0 space-y-2">
@@ -91,11 +150,6 @@ function HistoryCard({
                 <span className="text-sm">
                   {statusLabels[source.status] || source.status}
                 </span>
-                {source.status === "failed" && (
-                  <span className="line-clamp-2 text-center text-sm">
-                    {errorMessage(source)}
-                  </span>
-                )}
               </span>
             )}
             {selected && (
@@ -105,9 +159,7 @@ function HistoryCard({
             )}
             {source.status !== "succeeded" && (
               <Badge
-                variant={
-                  source.status === "failed" ? "destructive" : "secondary"
-                }
+                variant="secondary"
                 className="absolute left-3 top-3"
               >
                 {statusLabels[source.status] || source.status}
@@ -157,6 +209,22 @@ export function HistoryView() {
   const searchInput = useRef<HTMLInputElement>(null);
   const menuSelection = useRef<HTMLElement | null>(null);
   const [deleteFailedOpen, setDeleteFailedOpen] = useState(false);
+  const [density, setDensity] = useState<HistoryDensity>(() => {
+    try {
+      return localStorage.getItem(historyDensityKey) === "compact"
+        ? "compact"
+        : "large";
+    } catch {
+      return "large";
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem(historyDensityKey, density);
+    } catch {
+      // The current selection still works when browser storage is unavailable.
+    }
+  }, [density]);
   const failedCount = studio.jobs.filter(
     (job) => job.status === "failed",
   ).length;
@@ -394,6 +462,33 @@ export function HistoryView() {
               </div>
             )}
             </div>
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <span className="text-sm text-muted-foreground">表示</span>
+              <div
+                className="flex rounded-lg border p-1"
+                role="group"
+                aria-label="履歴の表示密度"
+              >
+                <Button
+                  variant={density === "large" ? "default" : "ghost"}
+                  size="sm"
+                  aria-pressed={density === "large"}
+                  onClick={() => setDensity("large")}
+                >
+                  <Columns2 className="size-4" />
+                  大きく表示
+                </Button>
+                <Button
+                  variant={density === "compact" ? "default" : "ghost"}
+                  size="sm"
+                  aria-pressed={density === "compact"}
+                  onClick={() => setDensity("compact")}
+                >
+                  <Grid2X2 className="size-4" />
+                  コンパクト
+                </Button>
+              </div>
+            </div>
             {hasFilters && (
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="text-sm text-muted-foreground" role="status">
@@ -495,7 +590,14 @@ export function HistoryView() {
                         </Button>
                       </div>
                     )}
-                    <div className="grid grid-cols-1 gap-x-5 gap-y-6 sm:grid-cols-2 2xl:grid-cols-3">
+                    <div
+                      className={cn(
+                        "grid grid-cols-1 items-start sm:grid-cols-2",
+                        density === "compact"
+                          ? "gap-3 lg:grid-cols-3 xl:grid-cols-4"
+                          : "gap-x-5 gap-y-6 2xl:grid-cols-3",
+                      )}
+                    >
                       {group.jobs.map((job) => (
                         <HistoryCard
                           key={job.id}

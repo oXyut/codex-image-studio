@@ -36,6 +36,7 @@ export function StudioProvider({ children }: { children: ReactNode }) {
     [graphBatchId, setGraphBatchId] = useState("");
   const [submitting, setSubmitting] = useState(false),
     submitLock = useRef(false);
+  const [recentGenerationIds, setRecentGenerationIds] = useState<string[]>([]);
   const [preview, setPreview] = useState<ImageSource | null>(null),
     [deleting, setDeleting] = useState<ImageSource | null>(null),
     [trash, setTrash] = useState(false);
@@ -216,6 +217,7 @@ export function StudioProvider({ children }: { children: ReactNode }) {
       ),
     ]);
     const id = accepted[0]?.id;
+    if (id) setRecentGenerationIds(accepted.map((source) => source.id));
     if (id) select(id);
     setView("create");
     setPreview(null);
@@ -294,6 +296,7 @@ export function StudioProvider({ children }: { children: ReactNode }) {
     view,
     navigate,
     selectedId,
+    recentGenerationIds,
     select,
     graphBatchId,
     setGraphBatchId,
