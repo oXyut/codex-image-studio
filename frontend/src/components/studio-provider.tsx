@@ -36,10 +36,12 @@ export function StudioProvider({ children }: { children: ReactNode }) {
     [graphBatchId, setGraphBatchId] = useState("");
   const [submitting, setSubmitting] = useState(false),
     submitLock = useRef(false);
+  const [recentGenerationIds, setRecentGenerationIds] = useState<string[]>([]);
   const [preview, setPreview] = useState<ImageSource | null>(null),
     [deleting, setDeleting] = useState<ImageSource | null>(null),
     [trash, setTrash] = useState(false);
   const refreshing = useRef<Promise<void> | null>(null);
+  const trashReturnFocus = useRef<HTMLElement | null>(null);
   const favoriteLocks = useRef(new Set<string>());
   const [favoritePendingIds, setFavoritePendingIds] = useState<string[]>([]);
   useEffect(() => {
@@ -215,6 +217,7 @@ export function StudioProvider({ children }: { children: ReactNode }) {
       ),
     ]);
     const id = accepted[0]?.id;
+    if (id) setRecentGenerationIds(accepted.map((source) => source.id));
     if (id) select(id);
     setView("create");
     setPreview(null);
@@ -293,6 +296,7 @@ export function StudioProvider({ children }: { children: ReactNode }) {
     view,
     navigate,
     selectedId,
+    recentGenerationIds,
     select,
     graphBatchId,
     setGraphBatchId,
@@ -339,7 +343,10 @@ export function StudioProvider({ children }: { children: ReactNode }) {
       setPreview(source);
     },
     requestDelete: setDeleting,
-    openTrash: () => setTrash(true),
+    openTrash: () => {
+      trashReturnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      setTrash(true);
+    },
     run,
   };
   return (
@@ -355,6 +362,11 @@ export function StudioProvider({ children }: { children: ReactNode }) {
         onDelete={setDeleting}
         trash={trash}
         onTrash={setTrash}
+        onTrashCloseAutoFocus={(event) => {
+          if (!trashReturnFocus.current?.isConnected) return;
+          event.preventDefault();
+          trashReturnFocus.current.focus();
+        }}
       />
     </StudioContext.Provider>
   );

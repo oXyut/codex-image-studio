@@ -3,7 +3,7 @@ import { dateLabel, statusLabels } from "@/lib/format";
 import { useStudio } from "@/lib/studio-context";
 import type { ImageSource } from "@/lib/types";
 import { Loader2, RotateCcw, Trash2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { type ComponentProps, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { ImageViewer } from "./image-viewer";
 import { Button } from "./ui/button";
@@ -48,6 +48,7 @@ export function StudioDialogs({
   onDelete,
   trash,
   onTrash,
+  onTrashCloseAutoFocus,
 }: {
   preview: ImageSource | null;
   onPreview: (value: ImageSource | null) => void;
@@ -55,6 +56,7 @@ export function StudioDialogs({
   onDelete: (value: ImageSource | null) => void;
   trash: boolean;
   onTrash: (value: boolean) => void;
+  onTrashCloseAutoFocus?: ComponentProps<typeof DialogContent>["onCloseAutoFocus"];
 }) {
   const studio = useStudio();
   const [plan, setPlan] = useState<Plan | null>(null),
@@ -245,7 +247,7 @@ export function StudioDialogs({
         </DialogContent>
       </Dialog>
       <Dialog open={trash} onOpenChange={onTrash}>
-        <DialogContent className="sm:max-w-xl">
+        <DialogContent className="sm:max-w-xl" onCloseAutoFocus={onTrashCloseAutoFocus}>
           <DialogHeader>
             <DialogTitle>ゴミ箱</DialogTitle>
             <DialogDescription>
