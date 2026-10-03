@@ -29,9 +29,10 @@ import {
   Undo2,
   X,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { TemplatePicker } from "./templates";
 import { GenerationRecovery } from "@/components/generation-recovery";
+import "./create-layout.css";
 const examples = [
   "朝のやわらかな光が差し込む、静かな森。木々の間に薄い霧が漂う。自然な写真の質感。",
   "白い背景に置いた、シンプルなガラスの香水ボトル。やわらかな影、スタジオ撮影。",
@@ -49,6 +50,11 @@ export function CreateView({
     [uploading, setUploading] = useState(false),
     [promptOpen, setPromptOpen] = useState(false),
     [exampleOpen, setExampleOpen] = useState(false);
+  const [inputOpen, setInputOpen] = useState(true);
+  useEffect(() => {
+    // Source-image edit actions must reveal the restored input at compact widths.
+    if (d.lineageContext) setInputOpen(true);
+  }, [d.lineageContext]);
   const fullPrompt = composePrompt(d.prompt, d.layers),
     source =
       studio.jobs.find((j) => j.id === studio.selectedId) || studio.jobs[0];
@@ -102,13 +108,39 @@ export function CreateView({
           )}
         </div>
       </header>
-      <div className="flex min-h-0 flex-1 flex-col md:flex-row">
+      <div className="create-workspace flex min-h-0 flex-1 flex-col md:flex-row">
         <section
           aria-label="制作の入力"
-          className="flex w-full shrink-0 flex-col border-b bg-white md:w-[320px] md:border-b-0 md:border-r lg:w-[360px]"
+          className="create-input flex w-full shrink-0 flex-col border-b bg-white md:w-[320px] md:border-b-0 md:border-r lg:w-[360px]"
         >
-          <div className="flex-1 space-y-6 overflow-y-auto p-5 lg:p-7">
-            <div>
+          <div className="create-input-summary hidden items-center gap-3 border-b p-4">
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm" title={d.prompt}>
+                {d.prompt.trim() || "プロンプトを入力して画像をつくる"}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                テンプレート {d.layers.length}件 · 参照画像 {d.references.length}件
+              </p>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              aria-expanded={inputOpen}
+              aria-controls="create-input-fields"
+              onClick={() => setInputOpen((open) => !open)}
+            >
+              <SlidersHorizontal />
+              {inputOpen ? "入力を閉じる" : "入力を編集"}
+            </Button>
+          </div>
+          <div
+            id="create-input-fields"
+            className={cn(
+              "create-input-fields flex-1 space-y-6 overflow-y-auto p-5 lg:p-7",
+              !inputOpen && "create-input-collapsed",
+            )}
+          >
+            <div className="create-prompt">
               <div className="mb-2 flex items-center justify-between">
                 <label htmlFor="prompt" className="font-medium">
                   プロンプト
@@ -468,7 +500,7 @@ export function CreateView({
               </div>
             )}
           </div>
-          <div className="fixed bottom-0 left-0 right-0 z-10 space-y-3 border-t bg-white p-5 md:sticky md:left-auto md:right-auto lg:p-6">
+          <div className="create-submit fixed bottom-0 left-0 right-0 z-10 space-y-3 border-t bg-white p-5 md:sticky md:left-auto md:right-auto lg:p-6">
             <div className="flex items-center justify-between">
               <label className="font-medium" htmlFor="generation-count">
                 生成枚数
@@ -535,7 +567,7 @@ export function CreateView({
         </section>
         <section
           aria-label="生成結果"
-          className="studio-result flex min-h-[540px] min-w-0 flex-1 flex-col bg-[#fafafa] md:min-h-0"
+          className="create-result studio-result flex min-h-[540px] min-w-0 flex-1 flex-col bg-[#fafafa] md:min-h-0"
         >
           <header className="flex min-h-16 items-center justify-between gap-3 border-b bg-white px-5 lg:px-7">
             <div>
