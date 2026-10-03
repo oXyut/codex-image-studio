@@ -41,6 +41,7 @@ export function StudioProvider({ children }: { children: ReactNode }) {
     [deleting, setDeleting] = useState<ImageSource | null>(null),
     [trash, setTrash] = useState(false);
   const refreshing = useRef<Promise<void> | null>(null);
+  const trashReturnFocus = useRef<HTMLElement | null>(null);
   const favoriteLocks = useRef(new Set<string>());
   const [favoritePendingIds, setFavoritePendingIds] = useState<string[]>([]);
   useEffect(() => {
@@ -342,7 +343,10 @@ export function StudioProvider({ children }: { children: ReactNode }) {
       setPreview(source);
     },
     requestDelete: setDeleting,
-    openTrash: () => setTrash(true),
+    openTrash: () => {
+      trashReturnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      setTrash(true);
+    },
     run,
   };
   return (
@@ -358,6 +362,11 @@ export function StudioProvider({ children }: { children: ReactNode }) {
         onDelete={setDeleting}
         trash={trash}
         onTrash={setTrash}
+        onTrashCloseAutoFocus={(event) => {
+          if (!trashReturnFocus.current?.isConnected) return;
+          event.preventDefault();
+          trashReturnFocus.current.focus();
+        }}
       />
     </StudioContext.Provider>
   );

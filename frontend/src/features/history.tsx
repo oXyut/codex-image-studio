@@ -3,6 +3,7 @@ import { ImageContextMenu, ImageFavoriteButton } from "@/components/image-action
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { dateLabel, errorMessage, imageTitle, isComplete, statusLabels } from "@/lib/format";
 import { useStudio } from "@/lib/studio-context";
@@ -19,6 +20,7 @@ import {
   ImageIcon,
   ImagePlus,
   LoaderCircle,
+  MoreHorizontal,
   Pencil,
   Search,
   SlidersHorizontal,
@@ -26,7 +28,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 
 type HistoryFilter = "all" | "complete" | "active" | "failed" | "cancelled";
 type HistoryDensity = "large" | "compact";
@@ -202,6 +204,10 @@ export function HistoryView() {
   const [favoriteOnly, setFavoriteOnly] = useState(false);
   const [batch, setBatch] = useState("all");
   const [moreFilters, setMoreFilters] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const searchPanelId = useId();
+  const searchInput = useRef<HTMLInputElement>(null);
+  const menuSelection = useRef<HTMLElement | null>(null);
   const [deleteFailedOpen, setDeleteFailedOpen] = useState(false);
   const [density, setDensity] = useState<HistoryDensity>(() => {
     try {
@@ -265,6 +271,7 @@ export function HistoryView() {
   const hasFilters = Boolean(
     query || filter !== "all" || batch !== "all" || favoriteOnly,
   );
+  const activeFilterCount = [query, filter !== "all", batch !== "all", favoriteOnly].filter(Boolean).length;
   const clearFilters = () => {
     setQuery("");
     setFilter("all");
@@ -276,22 +283,52 @@ export function HistoryView() {
     if (batch !== "all" && !batches.some((job) => job.batch?.id === batch))
       setBatch("all");
   }, [batches, batch]);
+  useEffect(() => {
+    if (searchOpen) searchInput.current?.focus();
+  }, [searchOpen]);
 
   return (
     <div className="flex h-full min-h-0">
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b px-5 py-5 md:px-8">
+        <header className="flex min-h-14 shrink-0 flex-wrap items-center justify-between gap-3 border-b px-5 py-2 md:px-8 md:py-5">
           <div className="flex items-baseline gap-3">
-            <h1 className="text-2xl font-semibold tracking-tight">生成履歴</h1>
+            <h1 className="text-xl font-semibold tracking-tight md:text-2xl">生成履歴</h1>
             <span className="text-sm text-muted-foreground">
               {studio.jobs.length}枚
             </span>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" className="size-11 md:hidden" aria-label="履歴の操作">
+                <MoreHorizontal className="size-5" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              {/* ダイアログを閉じた後に選択項目へ戻れるよう、メニューを保持する。 */}
+              <DropdownMenuItem className="min-h-11" disabled={studio.loading || failedCount === 0} onSelect={(event) => {
+                event.preventDefault();
+                if (event.currentTarget instanceof HTMLElement) {
+                  menuSelection.current = event.currentTarget;
+                  event.currentTarget.focus();
+                }
+                setDeleteFailedOpen(true);
+              }}>
+                <Trash2 />エラー画像を一括削除（{failedCount}件）
+              </DropdownMenuItem>
+              <DropdownMenuItem className="min-h-11" onSelect={(event) => {
+                event.preventDefault();
+                if (event.currentTarget instanceof HTMLElement) event.currentTarget.focus();
+                studio.openTrash();
+              }}>
+                <Trash2 />ゴミ箱
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <div className="hidden flex-wrap items-center gap-2 md:flex">
             <Button
               variant="outline"
               disabled={studio.loading || failedCount === 0}
-              onClick={() => setDeleteFailedOpen(true)}
+              onClick={() => { menuSelection.current = null; setDeleteFailedOpen(true); }}
             >
               <Trash2 className="size-4" />
               エラー画像を一括削除（{failedCount}件）
@@ -302,12 +339,25 @@ export function HistoryView() {
             </Button>
           </div>
         </header>
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-5 md:px-8">
-          <div className="mb-7 space-y-3">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-3 md:px-8 md:py-5">
+          <div className="mb-4 space-y-3 md:mb-7">
+            <Button
+              variant="outline"
+              className="h-11 w-full justify-start md:hidden"
+              aria-expanded={searchOpen}
+              aria-controls={searchPanelId}
+              onClick={() => setSearchOpen((value) => !value)}
+            >
+              <Search className="size-4" />
+              検索・絞り込み{activeFilterCount > 0 ? `（${activeFilterCount}）` : ""}
+              <span className="ml-auto text-xs text-muted-foreground">{searchOpen ? "閉じる" : "開く"}</span>
+            </Button>
+            <div id={searchPanelId} className={cn("space-y-3", !searchOpen && "hidden md:block")}>
             <div className="flex flex-wrap items-center gap-3">
               <div className="relative min-w-0 flex-1 basis-56">
                 <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
+                  ref={searchInput}
                   type="search"
                   aria-label="履歴を検索"
                   placeholder="タイトル・プロンプト・メモを検索"
@@ -362,33 +412,6 @@ export function HistoryView() {
                 )}
               </Button>
             </div>
-            <div className="flex flex-wrap items-center justify-end gap-2">
-              <span className="text-sm text-muted-foreground">表示</span>
-              <div
-                className="flex rounded-lg border p-1"
-                role="group"
-                aria-label="履歴の表示密度"
-              >
-                <Button
-                  variant={density === "large" ? "default" : "ghost"}
-                  size="sm"
-                  aria-pressed={density === "large"}
-                  onClick={() => setDensity("large")}
-                >
-                  <Columns2 className="size-4" />
-                  大きく表示
-                </Button>
-                <Button
-                  variant={density === "compact" ? "default" : "ghost"}
-                  size="sm"
-                  aria-pressed={density === "compact"}
-                  onClick={() => setDensity("compact")}
-                >
-                  <Grid2X2 className="size-4" />
-                  コンパクト
-                </Button>
-              </div>
-            </div>
             {moreFilters && (
               <div className="flex flex-wrap items-center gap-3 rounded-lg border bg-muted/20 p-3">
                 <Select value={batch} onValueChange={setBatch}>
@@ -438,10 +461,43 @@ export function HistoryView() {
                 )}
               </div>
             )}
+            </div>
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <span className="text-sm text-muted-foreground">表示</span>
+              <div
+                className="flex rounded-lg border p-1"
+                role="group"
+                aria-label="履歴の表示密度"
+              >
+                <Button
+                  variant={density === "large" ? "default" : "ghost"}
+                  size="sm"
+                  aria-pressed={density === "large"}
+                  onClick={() => setDensity("large")}
+                >
+                  <Columns2 className="size-4" />
+                  大きく表示
+                </Button>
+                <Button
+                  variant={density === "compact" ? "default" : "ghost"}
+                  size="sm"
+                  aria-pressed={density === "compact"}
+                  onClick={() => setDensity("compact")}
+                >
+                  <Grid2X2 className="size-4" />
+                  コンパクト
+                </Button>
+              </div>
+            </div>
             {hasFilters && (
-              <p className="text-sm text-muted-foreground" role="status">
-                {filtered.length}枚を表示 / 全{studio.jobs.length}枚
-              </p>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-sm text-muted-foreground" role="status">
+                  {filtered.length}枚を表示 / 全{studio.jobs.length}枚
+                </p>
+                <Button variant="ghost" className="h-11 md:hidden" onClick={clearFilters}>
+                  <X className="size-4" />条件を解除
+                </Button>
+              </div>
             )}
           </div>
           {studio.loading ? (
@@ -562,6 +618,11 @@ export function HistoryView() {
       <FailedJobsDeleteDialog
         open={deleteFailedOpen}
         onOpenChange={setDeleteFailedOpen}
+        onCloseAutoFocus={(event) => {
+          if (!menuSelection.current?.isConnected) return;
+          event.preventDefault();
+          menuSelection.current.focus();
+        }}
       />
     </div>
   );

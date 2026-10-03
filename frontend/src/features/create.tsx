@@ -92,8 +92,8 @@ export function CreateView({
   };
   return (
     <div className="flex h-full min-h-0 flex-col pb-44 md:pb-0">
-      <header className="flex min-h-20 shrink-0 flex-wrap items-center justify-between gap-3 border-b bg-white px-6 py-4 lg:min-h-[88px] lg:px-7">
-        <h1 className="text-2xl font-semibold">新しい画像</h1>
+      <header className="flex min-h-14 shrink-0 flex-wrap items-center justify-between gap-3 border-b bg-white px-5 py-2 md:min-h-20 md:px-6 md:py-4 lg:min-h-[88px] lg:px-7">
+        <h1 className="text-xl font-semibold md:text-2xl">新しい画像</h1>
         <div className="flex items-center gap-3">
           <span className="hidden text-sm text-muted-foreground sm:inline">
             {studio.draftSaved ? (

@@ -127,7 +127,7 @@
 @media (max-width: 767px) {
   .studio-view {
     height: auto;
-    min-height: calc(100dvh - 115px);
+    min-height: calc(100dvh - 101px);
   }
 }
 @media (prefers-reduced-motion: reduce) {

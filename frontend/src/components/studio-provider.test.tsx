@@ -32,6 +32,7 @@ beforeEach(() => {
     if (path === "/api/uploads") return { uploads: [] };
     if (path === "/api/templates?all=1") return { templates: [] };
     if (path === "/api/lineage") return { commits: [], branches: [], uploads: [] };
+    if (path === "/api/trash") return { deletions: [] };
     if (path === "/api/health?refresh=1") return { ready: false, message: "未接続" };
     throw new Error(`Unexpected API call: ${path}`);
   });
@@ -52,11 +53,23 @@ function Probe() {
       <section aria-label="生成結果"><ImageActions source={source} compact /></section>
       <section aria-label="履歴カード"><ImageFavoriteButton source={source} /></section>
       <button onClick={() => studio.openPreview(source)}>プレビューを開く</button>
+      <button onClick={studio.openTrash}>ゴミ箱を開く</button>
     </>
   );
 }
 
 describe("お気に入りの共有状態", () => {
+  it("ゴミ箱を閉じると開いた操作へキーボードフォーカスを戻す", async () => {
+    const user = userEvent.setup();
+    render(<StudioProvider><Probe /></StudioProvider>);
+    const trigger = await screen.findByRole("button", { name: "ゴミ箱を開く" });
+    await user.click(trigger);
+    expect(await screen.findByText("ゴミ箱は空です")).toBeInTheDocument();
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(trigger).toHaveFocus());
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
   it("詳細から系統図へ移動するとビューアを閉じ、閉じる方法によらず詳細の選択を保持する", async () => {
     const user = userEvent.setup();
     render(<StudioProvider><Probe /></StudioProvider>);
