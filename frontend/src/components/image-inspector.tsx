@@ -505,7 +505,10 @@ export function ImageInspector({
           {recoveryLayout && (
             <AccordionItem value="settings" className="rounded-lg border px-3">
               <AccordionTrigger className="text-sm">生成時の設定</AccordionTrigger>
-              <AccordionContent>{generationSettings}</AccordionContent>
+              <AccordionContent className="space-y-4">
+                {generationSettings}
+                <p className="break-all text-sm text-muted-foreground">ID: {source.id}</p>
+              </AccordionContent>
             </AccordionItem>
           )}
           <AccordionItem value="relations" className="rounded-lg border px-3">

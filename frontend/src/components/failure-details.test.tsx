@@ -87,6 +87,7 @@ describe("画像のない失敗の詳細", () => {
     await user.keyboard("{Enter}");
     expect(screen.getByText("イラスト", { exact: true })).toBeVisible();
     expect(screen.getByText("リクエストあり")).toBeVisible();
+    expect(screen.getByText(`ID: ${failed.id}`)).toBeVisible();
     await user.click(screen.getByText("エラーの詳細"));
     expect(screen.getByText(/TRANSIENT_ERROR\s+responseStreamDisconnected HTTP: 503/)).toBeVisible();
     await user.keyboard("{Escape}");
