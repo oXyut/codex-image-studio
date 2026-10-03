@@ -1,6 +1,6 @@
 import { StudioContext } from "@/lib/studio-context";
 import type { ImageSource, StudioContextValue } from "@/lib/types";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { Edge, Node, ReactFlowInstance } from "@xyflow/react";
 import { type ComponentType } from "react";
@@ -256,7 +256,7 @@ describe("LineageView", () => {
     ).toBeInTheDocument();
   });
 
-  it("画面へ移った時に全体を表示し、定期更新ではパン・ズームをリセットしない", async () => {
+  it("画面へ移った時に読める倍率で系統を表示し、定期更新ではパン・ズームをリセットしない", async () => {
     const studio = context({ view: "history" });
     const { rerender } = render(view(studio));
     expect(flowMocks.fitView).not.toHaveBeenCalled();
@@ -407,4 +407,98 @@ describe("LineageView", () => {
     await user.click(screen.getByRole("button", { name: "まとめて表示" }));
     expect(flowMocks.edges).toHaveLength(5);
   });
+  it("12件・6系統の初期表示は最新の系統で、概要から他の系統を選べる", async () => {
+    const jobs: ImageSource[] = Array.from({ length: 6 }, (_, index) => [
+      { ...parent, id: `root-${index}`, prompt: `系統 ${index}`, references: [], createdAt: `2026-10-02T00:${index}0:00Z` },
+      { ...parent, id: `child-${index}`, prompt: `分岐 ${index}`, references: [{ jobId: `root-${index}`, role: "reference" }], createdAt: `2026-10-02T00:${index}1:00Z` },
+    ]).flat();
+    const studio = context({ jobs, metadata: { commits: [], branches: [], uploads: [] } });
+    const user = userEvent.setup();
+    const { rerender } = render(view(studio));
+    const ids = () => flowMocks.nodes.filter(node => node.type === "image").map(node => node.id);
+    expect(ids()).toEqual(["root-5", "child-5"]);
+    expect(flowMocks.fitView).toHaveBeenLastCalledWith(expect.objectContaining({ minZoom: 0.75 }));
+    const calls = flowMocks.fitView.mock.calls.length;
+    rerender(view({ ...studio, jobs: studio.jobs.map(job => ({ ...job })), selectedId: "root-0" }));
+    expect(ids()).toEqual(["root-5", "child-5"]);
+    expect(flowMocks.fitView).toHaveBeenCalledTimes(calls);
+    await user.click(screen.getByRole("button", { name: "選択へ" }));
+    expect(ids()).toEqual(["root-0", "child-0"]);
+    expect(flowMocks.fitView).toHaveBeenLastCalledWith(expect.objectContaining({ nodes: [{ id: "root-0" }] }));
+    await user.click(screen.getByRole("button", { name: "全系統の概要" }));
+    expect(ids()).toHaveLength(12);
+    expect(screen.getByRole("complementary", { name: "系統の一覧" })).toBeInTheDocument();
+    expect(flowMocks.fitView).toHaveBeenLastCalledWith(expect.objectContaining({ minZoom: 0.15 }));
+    await user.click(screen.getByRole("button", { name: /系統 0.*2枚/ }));
+    expect(ids()).toEqual(["root-0", "child-0"]);
+    expect(flowMocks.fitView).toHaveBeenLastCalledWith(expect.objectContaining({ minZoom: 0.75 }));
+    fireEvent.change(screen.getByRole("textbox", { name: "系統図を検索" }), { target: { value: "分岐 3" } });
+    expect(ids()).toEqual(["root-3", "child-3"]);
+  });
+
+  it("選択画像があればその系統を初期表示し、外部から渡された同時作成へも切り替える", () => {
+    const other: ImageSource = { ...parent, id: "other", prompt: "別系統", references: [], createdAt: "2026-10-03T00:00:00Z", batch: { id: "other-batch", index: 1, count: 2 } };
+    const studio = context({ jobs: [...context().jobs, other], selectedId: child.id });
+    const { rerender } = render(view(studio));
+    expect(flowMocks.nodes.some(node => node.id === child.id)).toBe(true);
+    expect(flowMocks.nodes.some(node => node.id === other.id)).toBe(false);
+    rerender(view({ ...studio, graphBatchId: "other-batch" }));
+    expect(flowMocks.nodes.filter(node => node.type === "image").map(node => node.id)).toEqual([other.id]);
+  });
+
+  it("スマホではリストを初期表示し、失敗状態・参照元・キーボードでの選択を保つ", async () => {
+    vi.mocked(window.matchMedia).mockReturnValueOnce({ matches: true } as MediaQueryList);
+    const failed = { ...child, status: "failed" } as ImageSource;
+    const studio = context({ jobs: [parent, source, failed, peer] });
+    const user = userEvent.setup();
+    render(view(studio));
+    expect(screen.getByRole("button", { name: "リスト" })).toHaveAttribute("aria-pressed", "true");
+    const list = screen.getByLabelText("系統ごとの画像リスト");
+    expect(list).toHaveTextContent("エラー · 同時作成 1/2");
+    expect(list).toHaveTextContent("参照元: 朝の森");
+    expect(list).toHaveTextContent("入力元: 入力の起点");
+    const target = screen.getByRole("button", { name: "Target Cabinの詳細を開く" });
+    target.focus();
+    await user.keyboard("{Shift>}{F10}{/Shift}");
+    expect(screen.getByRole("menu", { name: "Target Cabinの操作" })).toBeInTheDocument();
+    expect(studio.openPreview).not.toHaveBeenCalled();
+    await user.keyboard("{Escape}");
+    target.focus();
+    await user.keyboard("{Enter}");
+    expect(studio.openPreview).toHaveBeenCalledExactlyOnceWith(failed);
+    await user.click(screen.getByRole("button", { name: "系統図" }));
+    expect(screen.getByRole("button", { name: "系統図" })).toHaveAttribute("aria-pressed", "true");
+    expect(flowMocks.fitView).toHaveBeenLastCalledWith(expect.objectContaining({ minZoom: 0.75 }));
+  });
+
+  it("検索に一致しない状態と空履歴をリストにも表示する", async () => {
+    const studio = context();
+    const user = userEvent.setup();
+    const { rerender } = render(view(studio));
+    await user.click(screen.getByRole("button", { name: "リスト" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "系統図を検索" }), { target: { value: "見つからない" } });
+    expect(screen.getByLabelText("系統ごとの画像リスト")).toHaveTextContent("条件に合う画像がありません");
+    rerender(view(context({ jobs: [], metadata: { commits: [], branches: [], uploads: [] } })));
+    expect(screen.getByLabelText("系統ごとの画像リスト")).toHaveTextContent("画像を生成すると、つながりをたどれます。");
+    expect(screen.getByRole("button", { name: "全系統の概要" })).toBeDisabled();
+  });
+
+  it("系統一覧や画面サイズで描画幅が変わった後に概要図を合わせ直す", async () => {
+    let resized: ResizeObserverCallback = () => {};
+    vi.stubGlobal("ResizeObserver", class {
+      constructor(callback: ResizeObserverCallback) { resized = callback; }
+      observe() {}
+      disconnect() {}
+    });
+    const user = userEvent.setup();
+    render(view(context()));
+    await user.click(screen.getByRole("button", { name: "全系統の概要" }));
+    const calls = flowMocks.fitView.mock.calls.length;
+    act(() => resized([{ contentRect: { width: 1024, height: 650 } } as ResizeObserverEntry], {} as ResizeObserver));
+    expect(flowMocks.fitView).toHaveBeenCalledTimes(calls + 1);
+    expect(flowMocks.fitView).toHaveBeenLastCalledWith(expect.objectContaining({ minZoom: 0.15 }));
+    act(() => resized([{ contentRect: { width: 1024, height: 650 } } as ResizeObserverEntry], {} as ResizeObserver));
+    expect(flowMocks.fitView).toHaveBeenCalledTimes(calls + 1);
+  });
+
 });
