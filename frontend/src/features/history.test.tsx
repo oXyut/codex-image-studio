@@ -1,10 +1,12 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { StudioContext } from "@/lib/studio-context";
 import type { ImageSource, StudioContextValue } from "@/lib/types";
 import { HistoryView } from "./history";
 import { ApiError } from "@/lib/api";
+import { ImageViewer } from "@/components/image-viewer";
 
 beforeEach(() => localStorage.removeItem("codex-image-studio.history-density"));
 afterEach(() => {
@@ -48,6 +50,26 @@ function studio(jobs: ImageSource[]): StudioContextValue {
 }
 
 describe("生成履歴", () => {
+  it("失敗の詳細をEscapeで閉じると、履歴で開いたボタンへフォーカスを戻す", async () => {
+    const failed = job("失敗した画像", { status: "failed", image: undefined, error: "タイムアウトしました。" });
+    const context = studio([failed]);
+    function HistoryWithViewer() {
+      const [preview, setPreview] = useState<ImageSource | null>(null);
+      return <StudioContext.Provider value={{ ...context, openPreview: setPreview }}>
+        <HistoryView />
+        <ImageViewer source={preview} previous={null} next={null} onSource={setPreview} />
+      </StudioContext.Provider>;
+    }
+    const user = userEvent.setup();
+    render(<HistoryWithViewer />);
+    const opener = screen.getByRole("button", { name: "失敗した画像を選択" });
+    await user.click(opener);
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    await waitFor(() => expect(opener).toHaveFocus());
+  });
+
   it("表示密度をキーボードで切り替え、再表示後も選択を保持する", async () => {
     const context = studio([job("比較画像")]);
     const user = userEvent.setup();
