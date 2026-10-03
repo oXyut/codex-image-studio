@@ -398,39 +398,49 @@ export function ImageInspector({
             )}
           </div>
         </div>
-        <dl className="grid grid-cols-[auto_1fr] gap-x-5 gap-y-3 border-t pt-5 text-sm">
-          <dt className="text-muted-foreground">サイズ</dt>
-          <dd className="text-right">
-            {uploaded && source.image?.width
-              ? `${source.image.width} × ${source.image.height}px`
-              : canvasSizeLabel(source.size, { full: true })}
-          </dd>
-          {!uploaded && (
-            <>
-              <dt className="text-muted-foreground">スタイル</dt>
-              <dd className="text-right">
-                {styleLabels[source.style || "auto"] || source.style}
-              </dd>
-              <dt className="text-muted-foreground">背景透過</dt>
-              <dd className="text-right">
-                {source.transparent ? "リクエストあり" : "なし"}
-              </dd>
-              <dt className="text-muted-foreground">参照画像</dt>
-              <dd className="text-right">{source.references?.length || 0}枚</dd>
-              <dt className="text-muted-foreground">テンプレート</dt>
-              <dd className="text-right">{source.layers?.length || 0}件</dd>
-            </>
-          )}
-          {typeof source.image?.bytes === "number" && (
-            <>
-              <dt className="text-muted-foreground">ファイル</dt>
-              <dd className="text-right">
-                {(source.image.bytes / 1024 / 1024).toFixed(1)} MB
-              </dd>
-            </>
-          )}
-        </dl>
         <Accordion type="multiple" className="space-y-3">
+          <AccordionItem value="settings" className="rounded-lg border px-3">
+            <AccordionTrigger className="text-sm">
+              生成設定・ファイル情報
+            </AccordionTrigger>
+            <AccordionContent className="space-y-4">
+              <dl className="grid grid-cols-[auto_1fr] gap-x-5 gap-y-3 text-sm">
+                <dt className="text-muted-foreground">サイズ</dt>
+                <dd className="text-right">
+                  {uploaded && source.image?.width
+                    ? `${source.image.width} × ${source.image.height}px`
+                    : canvasSizeLabel(source.size, { full: true })}
+                </dd>
+                {!uploaded && (
+                  <>
+                    <dt className="text-muted-foreground">スタイル</dt>
+                    <dd className="text-right">
+                      {styleLabels[source.style || "auto"] || source.style}
+                    </dd>
+                    <dt className="text-muted-foreground">背景透過</dt>
+                    <dd className="text-right">
+                      {source.transparent ? "リクエストあり" : "なし"}
+                    </dd>
+                    <dt className="text-muted-foreground">参照画像</dt>
+                    <dd className="text-right">{source.references?.length || 0}枚</dd>
+                    <dt className="text-muted-foreground">テンプレート</dt>
+                    <dd className="text-right">{source.layers?.length || 0}件</dd>
+                  </>
+                )}
+                {typeof source.image?.bytes === "number" && (
+                  <>
+                    <dt className="text-muted-foreground">ファイル</dt>
+                    <dd className="text-right">
+                      {(source.image.bytes / 1024 / 1024).toFixed(1)} MB
+                    </dd>
+                  </>
+                )}
+              </dl>
+              <p className="break-all text-sm text-muted-foreground">
+                ID: {source.id}
+              </p>
+            </AccordionContent>
+          </AccordionItem>
           {!uploaded && (
             <AccordionItem value="prompt" className="rounded-lg border px-3">
               <AccordionTrigger className="text-sm">
@@ -581,9 +591,6 @@ export function ImageInspector({
             </AccordionItem>
           )}
         </Accordion>
-        <p className="break-all text-sm text-muted-foreground">
-          ID: {source.id}
-        </p>
       </div>
     </div>
   );
