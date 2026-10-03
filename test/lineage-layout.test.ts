@@ -2,11 +2,13 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { GraphImage, GraphPosition } from "../shared/lineage-utils.js";
 import {
+  buildLineageDisplayEdges,
   buildLineageGraph,
   filterLineageGraph,
   layoutLineageGraph,
   lineageEdgePath,
   lineageBatchEdgePath,
+  lineageBatchNodeId,
 } from '../shared/lineage-utils.js';
 import type { LineageCommit } from '../shared/types.js';
 
@@ -136,6 +138,12 @@ test('同時作成を受付順の2列グリッドに圧縮し、元の画像ID�
   assert.equal(graph.components.length, 2);
   assert.deepEqual(graph.edges.filter(edge => edge.to === 'leaf').map(edge => edge.from), ['v2']);
   assert.equal(graph.edges.length, 5, '同時作成の仲間の間に親子関係を追加しない');
+  const display = buildLineageDisplayEdges(visible.edges, compact.batchGroups);
+  assert.equal(display.length, 2);
+  assert.equal(display[0].to, lineageBatchNodeId(compact.batchGroups[0]));
+  assert.deepEqual(display[0].targetIds, ['v1', 'v2', 'v3', 'v4']);
+  assert.equal(display[1].from, 'v2'); assert.equal(display[1].to, 'leaf');
+  assert.deepEqual(buildLineageDisplayEdges(visible.edges, expanded.batchGroups).map(({ targetIds, targetGroup, ...edge }) => edge), visible.edges);
   const group = compact.batchGroups[0], unrelated = compact.positions.get('unrelated')!;
   assert.ok(unrelated.y >= group.y + group.height);
 });
@@ -148,11 +156,19 @@ test('2〜10枚と検索後の部分集合でも枠・次の世代の画像が�
     assert.equal(hasOverlappingCards(compact.positions), false);
     const group = compact.batchGroups[0], leaf = compact.positions.get('leaf')!;
     assert.ok(group.x + group.width < leaf.x, '2列の枠幅を次の世代の開始位置に反映する');
-    const filtered = layoutLineageGraph(graph, filterLineageGraph(graph, { query: '検索対象' }), { compactBatches: true });
+    const display = buildLineageDisplayEdges(graph.edges, compact.batchGroups);
+    assert.equal(display.length, 2);
+    assert.equal(display[0].targetIds.length, count - 1);
+    const visible = filterLineageGraph(graph, { query: '検索対象' });
+    const filtered = layoutLineageGraph(graph, visible, { compactBatches: true });
     assert.deepEqual([...filtered.positions.keys()].sort(), ['root', 'v0']);
     assert.equal(filtered.batchGroups[0].visibleCount, 1);
     assert.equal(filtered.batchGroups[0].count, count);
     assert.equal(filtered.batchGroups[0].deletedCount, 1);
+    const filteredDisplay = buildLineageDisplayEdges(visible.edges, filtered.batchGroups);
+    assert.equal(filteredDisplay.length, 1);
+    assert.deepEqual(filteredDisplay[0].targetIds, ['v0']);
+    assert.equal(filteredDisplay[0].to, lineageBatchNodeId(filtered.batchGroups[0]));
   }
 });
 
@@ -164,6 +180,32 @@ test('参照元や入力元が複数でも保持し、異なる世代の同時�
   assert.equal(hasOverlappingCards(layout.positions), false);
   for (const edge of graph.edges) assert.ok(layout.positions.get(edge.from)!.x < layout.positions.get(edge.to)!.x);
   assert.deepEqual(graph.edges.filter(edge => edge.to === 'b').map(edge => [edge.from, edge.kind]), [['a', 'reference'], ['source', 'source']]);
+  const display = buildLineageDisplayEdges(graph.edges, layout.batchGroups);
+  assert.equal(display.find(edge => edge.from === 'a' && edge.targetIds.includes('b'))!.to, lineageBatchNodeId(layout.batchGroups[1]));
+  assert.deepEqual(display.filter(edge => edge.to === 'leaf').map(edge => edge.from), ['a', 'b']);
+});
+
+test('共通の参照だけを枠へ集約し、個別の関係・参照と入力元・異なる操作を混同しない', () => {
+  const batch = { id: 'mixed', count: 4 };
+  const jobs = [job('common', 0), job('partial', 1), job('mixed-kind', 2), job('mixed-operation', 3), ...[1, 2, 3, 4].map(index => job(`v${index}`, index + 3, {
+    batch: { ...batch, index }, references: [{ jobId: 'common' }, ...(index < 4 ? [{ jobId: 'partial' }] : []), ...(index < 3 ? [{ jobId: 'mixed-kind' }] : [])],
+    lineage: index < 3 ? undefined : { sourceJobId: 'mixed-kind', operation: 'edit' },
+  })), ...[1, 2].map(index => job(`operation-${index}`, index + 8, {
+    batch: { id: 'operations', count: 2, index }, lineage: { sourceJobId: 'mixed-operation', operation: index === 1 ? 'edit' : 'regenerate' },
+  }))];
+  const graph = buildLineageGraph({}, jobs);
+  const edges = structuredClone(graph.edges);
+  const layout = layoutLineageGraph(graph, undefined, { compactBatches: true });
+  const display = buildLineageDisplayEdges(graph.edges, layout.batchGroups);
+  const shared = display.filter(edge => edge.targetGroup);
+  assert.equal(shared.length, 1);
+  assert.equal(shared[0].from, 'common'); assert.deepEqual(shared[0].targetIds, ['v1', 'v2', 'v3', 'v4']);
+  assert.equal(display.filter(edge => edge.from === 'partial').length, 3);
+  assert.deepEqual(display.filter(edge => edge.from === 'mixed-kind').map(edge => [edge.to, edge.kind]), [['v1', 'reference'], ['v2', 'reference'], ['v3', 'source'], ['v4', 'source']]);
+  assert.deepEqual(display.filter(edge => edge.from === 'mixed-operation').map(edge => [edge.to, edge.label]), [['operation-1', '入力を編集'], ['operation-2', '再生成']]);
+  assert.deepEqual(graph.edges, edges, '表示用の集約は元の接続データを変更しない');
+  const individual = layoutLineageGraph(graph);
+  assert.deepEqual(buildLineageDisplayEdges(graph.edges, individual.batchGroups).map(({ targetIds, targetGroup, ...edge }) => edge), graph.edges);
 });
 
 test('グリッドの内側の画像への線はサムネイル間の余白を通り、仲間の画像に重ならない', () => {
