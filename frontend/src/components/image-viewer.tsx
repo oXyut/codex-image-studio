@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, PanelRight, X } from "lucide-react";
 import { useStudio } from "@/lib/studio-context";
 import { dateLabel, imageTitle } from "@/lib/format";
@@ -28,8 +28,10 @@ export function ImageViewer({
   const studio = useStudio();
   const [detailsOpen, setDetailsOpen] = useState(true);
   const detailsId = useId();
+  const recoveryReturnFocus = useRef<HTMLElement | null>(null);
   const hasImage = Boolean(source?.image);
   const showDetails = detailsOpen || !hasImage;
+  const recoveryLayout = source?.status === "failed" && !hasImage;
   useEffect(() => {
     if (!source) setDetailsOpen(true);
   }, [source?.id]);
@@ -46,7 +48,24 @@ export function ImageViewer({
     >
       <DialogContent
         showCloseButton={false}
-        className="flex h-[96dvh] max-h-[96dvh] w-[calc(100%-2rem)] max-w-none flex-col gap-0 overflow-hidden p-0 sm:max-w-none max-sm:h-[100dvh] max-sm:max-h-[100dvh] max-sm:w-full max-sm:rounded-none"
+        className={
+          recoveryLayout
+            ? "flex max-h-[90dvh] w-[calc(100%-2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl"
+            : "flex h-[96dvh] max-h-[96dvh] w-[calc(100%-2rem)] max-w-none flex-col gap-0 overflow-hidden p-0 sm:max-w-none max-sm:h-[100dvh] max-sm:max-h-[100dvh] max-sm:w-full max-sm:rounded-none"
+        }
+        onOpenAutoFocus={() => {
+          if (recoveryLayout && document.activeElement instanceof HTMLElement) {
+            recoveryReturnFocus.current = document.activeElement;
+          }
+        }}
+        onCloseAutoFocus={(event) => {
+          const opener = recoveryReturnFocus.current;
+          recoveryReturnFocus.current = null;
+          if (opener?.isConnected) {
+            event.preventDefault();
+            opener.focus();
+          }
+        }}
         onKeyDown={(event) => {
           if (
             !["ArrowLeft", "ArrowRight"].includes(event.key) ||
@@ -71,10 +90,13 @@ export function ImageViewer({
         <header className="flex shrink-0 items-center justify-between gap-3 border-b px-4 py-3">
           <div className="min-w-0 space-y-1">
             <DialogTitle className="truncate">
-              {source && imageTitle(source)}
+              {recoveryLayout ? "生成失敗の詳細" : source && imageTitle(source)}
             </DialogTitle>
             <DialogDescription className="truncate">
-              {source && dateLabel(source.createdAt)} · 画像クリックで拡大・移動
+              {source && dateLabel(source.createdAt)} ·{" "}
+              {recoveryLayout
+                ? "原因と入力を確認して再試行できます"
+                : "画像クリックで拡大・移動"}
             </DialogDescription>
           </div>
           <div className="flex shrink-0 items-center gap-2">
@@ -93,7 +115,9 @@ export function ImageViewer({
             <Button
               variant="ghost"
               size="icon"
-              aria-label="画像プレビューを閉じる"
+              aria-label={recoveryLayout
+                ? "生成失敗の詳細を閉じる"
+                : "画像プレビューを閉じる"}
               onClick={() => {
                 setDetailsOpen(true);
                 onSource(null);
@@ -104,7 +128,9 @@ export function ImageViewer({
           </div>
         </header>
         {source && (
-          <div className="flex min-h-0 flex-1 flex-col md:flex-row">
+          <div className={recoveryLayout
+            ? "min-h-0"
+            : "flex min-h-0 flex-1 flex-col md:flex-row"}>
             {hasImage && (
               <div className="flex min-h-0 min-w-0 flex-1 flex-col max-md:basis-1/2">
                 <div className="relative flex min-h-0 flex-1">
@@ -145,11 +171,13 @@ export function ImageViewer({
             {showDetails && (
               <aside
                 id={detailsId}
-                aria-label="画像の詳細"
+                aria-label={recoveryLayout ? "生成失敗の詳細" : "画像の詳細"}
                 className={
-                  hasImage
-                    ? "min-h-0 shrink-0 overflow-hidden border-t md:w-[360px] md:border-l md:border-t-0 max-md:flex-1 max-md:basis-1/2"
-                    : "min-h-0 w-full max-w-2xl flex-1 self-center"
+                  recoveryLayout
+                    ? "min-h-0 w-full"
+                    : hasImage
+                      ? "min-h-0 shrink-0 overflow-hidden border-t md:w-[360px] md:border-l md:border-t-0 max-md:flex-1 max-md:basis-1/2"
+                      : "min-h-0 w-full max-w-2xl flex-1 self-center"
                 }
               >
                 <ImageInspector
@@ -157,6 +185,7 @@ export function ImageViewer({
                   source={source}
                   mode={studio.view === "lineage" ? "lineage" : "history"}
                   showPreview={false}
+                  recoveryLayout={recoveryLayout}
                   onClose={hasImage ? () => setDetailsOpen(false) : undefined}
                 />
               </aside>
