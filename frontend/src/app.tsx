@@ -28,7 +28,10 @@ export function App() {
     body: string;
   }>();
   return (
-    <div className="flex min-h-dvh flex-col md:h-dvh md:min-h-0 md:flex-row">
+    <div
+      data-view={studio.view}
+      className="studio-shell flex min-h-dvh flex-col md:h-dvh md:min-h-0 md:flex-row"
+    >
       <aside className="flex shrink-0 flex-col border-b bg-[#fafafa] md:w-[184px] md:border-b-0 md:border-r lg:w-[208px]">
         <div className="flex items-center gap-3 p-4 md:flex-col md:items-start md:px-5 md:py-6">
           <img

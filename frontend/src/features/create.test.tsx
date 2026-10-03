@@ -4,6 +4,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { StudioContext } from "@/lib/studio-context";
 import type { ImageSource, StudioContextValue } from "@/lib/types";
 import { CreateView } from "./create";
+import { useState } from "react";
+import { sourceDraft } from "@/lib/draft";
 
 vi.mock("./templates", () => ({ TemplatePicker: () => null }));
 vi.mock("@/components/reference-picker", () => ({
@@ -65,6 +67,68 @@ function renderView(studio: StudioContextValue) {
 }
 
 describe("制作画面の生成結果", () => {
+  it("入力の開閉をキーボードで操作でき、下書き・設定と生成への到達を維持する", async () => {
+    const studio = context();
+    studio.generate = vi.fn();
+    const initialDraft: StudioContextValue["draft"] = {
+      ...studio.draft,
+      layers: [{
+        id: "light",
+        name: "やわらかい光",
+        body: "自然な光",
+        category: "lighting",
+        version: 1,
+        tags: [],
+        favorite: false,
+      }],
+      references: [{ jobId: completed.id, role: "overall" }],
+    };
+    function DraftHarness() {
+      const [draft, setDraft] = useState(initialDraft);
+      return (
+        <StudioContext.Provider value={{
+          ...studio,
+          draft,
+          updateDraft: (changes) => setDraft((current) => ({ ...current, ...changes })),
+        }}>
+          <CreateView onSaveTemplate={vi.fn()} />
+        </StudioContext.Provider>
+      );
+    }
+    const user = userEvent.setup();
+    render(<DraftHarness />);
+    const prompt = screen.getByRole("textbox", { name: "プロンプト" });
+    await user.clear(prompt);
+    await user.type(prompt, "構図を確認するための入力");
+    const disclosure = screen.getByRole("button", { name: "入力を閉じる" });
+    expect(disclosure).toHaveAttribute("aria-expanded", "true");
+    expect(
+      document.getElementById(disclosure.getAttribute("aria-controls")!),
+    ).toContainElement(prompt);
+    disclosure.focus();
+    await user.keyboard("{Enter}");
+    expect(disclosure).toHaveFocus();
+    expect(disclosure).toHaveAccessibleName("入力を編集");
+    expect(disclosure).toHaveAttribute("aria-expanded", "false");
+    expect(screen.getByText("テンプレート 1件 · 参照画像 1件")).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "生成枚数" })).toHaveTextContent("3枚");
+    const generate = screen.getByRole("button", { name: "3枚の画像を生成" });
+    expect(generate).toBeEnabled();
+    expect(studio.generate).not.toHaveBeenCalled();
+    await user.keyboard(" ");
+    expect(disclosure).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("textbox", { name: "プロンプト" })).toBe(prompt);
+    expect(prompt).toHaveValue("構図を確認するための入力");
+    expect(
+      screen.getByRole("button", { name: /やわらかい光\s*v1/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("combobox", { name: "参照画像の役割" }),
+    ).toHaveTextContent("全体");
+    await user.click(generate);
+    expect(studio.generate).toHaveBeenCalledOnce();
+  });
+
   it("停止後のerror:nullを安全に描画し、入力が保持されていることを伝える", () => {
     const cancelled: ImageSource = {
       ...completed,
@@ -84,6 +148,44 @@ describe("制作画面の生成結果", () => {
     expect(
       screen.queryByRole("button", { name: "内容を編集して再試行" }),
     ).not.toBeInTheDocument();
+  });
+
+  it("入力を閉じていても、失敗画像の編集操作で復元した入力を開く", async () => {
+    const failed: ImageSource = {
+      ...completed,
+      id: "failed",
+      status: "failed",
+      image: undefined,
+      batch: undefined,
+      error: null,
+    };
+    const studio = context({ jobs: [failed], selectedId: failed.id });
+    function DraftHarness() {
+      const [draft, setDraft] = useState(studio.draft);
+      return (
+        <StudioContext.Provider value={{
+          ...studio,
+          draft,
+          replaceFromSource: (source) => {
+            studio.replaceFromSource(source);
+            setDraft((current) => sourceDraft(current, source));
+          },
+        }}>
+          <CreateView onSaveTemplate={vi.fn()} />
+        </StudioContext.Provider>
+      );
+    }
+    const user = userEvent.setup();
+    render(<DraftHarness />);
+    await user.click(screen.getByRole("button", { name: "入力を閉じる" }));
+    await user.click(screen.getByRole("button", { name: "内容を編集して再試行" }));
+    expect(studio.replaceFromSource).toHaveBeenCalledExactlyOnceWith(failed);
+    expect(
+      screen.getByRole("button", { name: "入力を閉じる" }),
+    ).toHaveAttribute("aria-expanded", "true");
+    expect(
+      screen.getByRole("textbox", { name: "プロンプト" }),
+    ).toHaveValue(failed.prompt);
   });
 
   it("完成画像を選択中でも、同時作成の残り1枚を停止できる", async () => {
