@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { type ComponentProps, useEffect, useState } from "react";
 import { LoaderCircle, RotateCcw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { ApiError } from "@/lib/api";
@@ -22,9 +22,11 @@ type FailedDeletionPlan = {
 export function FailedJobsDeleteDialog({
   open,
   onOpenChange,
+  onCloseAutoFocus,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  onCloseAutoFocus?: ComponentProps<typeof DialogContent>["onCloseAutoFocus"];
 }) {
   const studio = useStudio();
   const [plan, setPlan] = useState<FailedDeletionPlan | null>(null);
@@ -76,6 +78,7 @@ export function FailedJobsDeleteDialog({
   return (
     <Dialog open={open} onOpenChange={(value) => { if (!busy) onOpenChange(value); }}>
       <DialogContent
+        onCloseAutoFocus={onCloseAutoFocus}
         className="sm:max-w-xl"
         onEscapeKeyDown={(event) => { if (busy) event.preventDefault(); }}
         onPointerDownOutside={(event) => { if (busy) event.preventDefault(); }}

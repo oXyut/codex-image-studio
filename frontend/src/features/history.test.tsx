@@ -43,6 +43,79 @@ function studio(jobs: ImageSource[]): StudioContextValue {
 }
 
 describe("生成履歴", () => {
+  it("検索領域をキーボードで開き、閉じても検索とお気に入り条件を保持して解除できる", async () => {
+    const context = studio([job("森の朝", { favorite: true }), job("森の夜"), job("海", { favorite: true })]);
+    const user = userEvent.setup();
+    render(<StudioContext.Provider value={context}><HistoryView /></StudioContext.Provider>);
+    const toggle = screen.getByRole("button", { name: /検索・絞り込み/ });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    toggle.focus();
+    await user.keyboard("{Enter}");
+    const search = screen.getByRole("searchbox", { name: "履歴を検索" });
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    expect(search).toHaveFocus();
+    await user.type(search, "森");
+    await user.click(screen.getByRole("button", { name: "お気に入りのみ" }));
+    await user.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(toggle).toHaveTextContent("検索・絞り込み（2）");
+    expect(toggle).toHaveFocus();
+    expect(screen.getByRole("status")).toHaveTextContent("1枚を表示 / 全3枚");
+    expect(screen.getByRole("button", { name: "森の朝を選択" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "森の夜を選択" })).not.toBeInTheDocument();
+    await user.click(toggle);
+    expect(search).toHaveValue("森");
+    expect(screen.getByRole("button", { name: "お気に入りのみ" })).toHaveAttribute("aria-pressed", "true");
+    await user.click(toggle);
+    await user.click(screen.getByRole("button", { name: "条件を解除" }));
+    expect(search).toHaveValue("");
+    expect(screen.getByRole("button", { name: "森の夜を選択" })).toBeInTheDocument();
+    expect(toggle).not.toHaveTextContent("（");
+    expect(context.api).not.toHaveBeenCalled();
+  });
+
+  it("履歴の操作メニューをキーボードで開閉し、ゴミ箱と削除確認へ移れる", async () => {
+    const context = studio([job("失敗", { status: "failed", image: undefined })]);
+    vi.mocked(context.api).mockResolvedValue({ planToken: "confirmed", count: 1, nodes: [{ id: "失敗", title: "失敗" }] });
+    const user = userEvent.setup();
+    render(<StudioContext.Provider value={context}><HistoryView /></StudioContext.Provider>);
+    const trigger = screen.getByRole("button", { name: "履歴の操作" });
+    trigger.focus();
+    await user.keyboard("{Enter}");
+    expect(screen.getByRole("menuitem", { name: "エラー画像を一括削除（1件）" })).toBeInTheDocument();
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(trigger).toHaveFocus());
+    await user.click(trigger);
+    await user.click(screen.getByRole("menuitem", { name: "ゴミ箱" }));
+    expect(context.openTrash).toHaveBeenCalledOnce();
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(trigger).toHaveFocus());
+    await user.click(trigger);
+    await user.click(screen.getByRole("menuitem", { name: "エラー画像を一括削除（1件）" }));
+    expect(await screen.findByText("削除対象：エラー画像 1件")).toBeInTheDocument();
+    expect(context.api).toHaveBeenCalledOnce();
+    expect(context.api).toHaveBeenCalledWith("/api/jobs/failed/deletion-preview");
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.getByRole("menuitem", { name: "エラー画像を一括削除（1件）" })).toHaveFocus());
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(trigger).toHaveFocus());
+  });
+
+  it("空の履歴でも検索を開閉でき、操作メニューの一括削除は無効になる", async () => {
+    const context = studio([]);
+    const user = userEvent.setup();
+    render(<StudioContext.Provider value={context}><HistoryView /></StudioContext.Provider>);
+    expect(screen.getByText("生成した画像がここに並びます")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /検索・絞り込み/ }));
+    await user.type(screen.getByRole("searchbox", { name: "履歴を検索" }), "見つからない");
+    await user.click(screen.getByRole("button", { name: /検索・絞り込み/ }));
+    expect(screen.getByText("一致する履歴がありません")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "条件を解除" }));
+    await user.click(screen.getByRole("button", { name: "履歴の操作" }));
+    expect(screen.getByRole("menuitem", { name: "エラー画像を一括削除（0件）" })).toHaveAttribute("data-disabled");
+  });
+
   it("別のカードを右クリックしても詳細を開かず、そのカードを参照に追加する", async () => {
     const first = job("最初の画像"),
       target = job("右クリックした画像");
