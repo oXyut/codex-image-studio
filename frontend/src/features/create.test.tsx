@@ -1,11 +1,11 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { StudioContext } from "@/lib/studio-context";
 import type { ImageSource, StudioContextValue } from "@/lib/types";
 import { CreateView } from "./create";
+import { emptyDraft, sourceDraft } from "@/lib/draft";
 import { useState } from "react";
-import { sourceDraft } from "@/lib/draft";
 
 vi.mock("./templates", () => ({ TemplatePicker: () => null }));
 vi.mock("@/components/reference-picker", () => ({
@@ -41,6 +41,7 @@ function context(
       lineageContext: null,
     },
     selectedId: completed.id,
+    recentGenerationIds: [],
     health: { ready: true, message: "" },
     submitting: false,
     draftSaved: true,
@@ -67,6 +68,74 @@ function renderView(studio: StudioContextValue) {
 }
 
 describe("制作画面の生成結果", () => {
+  it("空の下書きでも最新の履歴の出所とタイトルを表示する", () => {
+    renderView(context({ selectedId: null, draft: emptyDraft }));
+    expect(screen.getByRole("heading", { name: "最新の履歴" })).toBeVisible();
+    expect(screen.getByRole("heading", { name: "森の家" })).toBeVisible();
+    expect(screen.getByText(/現在の下書きと生成時の入力は異なります/)).toBeVisible();
+    expect(screen.queryByRole("heading", { name: "今回の生成結果" })).not.toBeInTheDocument();
+  });
+
+  it("失敗の入力を読戻して別の成功履歴を選んでも、出所と元入力を確認できる", async () => {
+    const failed: ImageSource = { ...completed, id: "failed-recipe", prompt: "失敗時の別の入力", status: "failed", image: null, batch: undefined };
+    const studio = context({ draft: sourceDraft(emptyDraft, failed), jobs: [completed, failed] });
+    const user = userEvent.setup();
+    renderView(studio);
+    expect(screen.getByRole("heading", { name: "選択中の履歴" })).toBeVisible();
+    expect(screen.getByText(/現在の下書きと生成時の入力は異なります/)).toBeVisible();
+    expect(screen.getByRole("textbox", { name: "プロンプト" })).toHaveValue(failed.prompt);
+    const summary = screen.getByText("この履歴の元の入力を確認");
+    await user.click(summary);
+    const details = summary.closest("details")!;
+    expect(details).toHaveAttribute("open");
+    expect(within(details).getByText("森の家")).toBeVisible();
+    expect(studio.updateDraft).not.toHaveBeenCalled();
+    expect(studio.replaceFromSource).not.toHaveBeenCalled();
+  });
+
+  it("同じ入力の履歴も新しい生成結果とは呼ばず、編集後は入力の違いを示す", () => {
+    const studio = context({ draft: sourceDraft(emptyDraft, completed) });
+    const rendered = renderView(studio);
+    expect(screen.getByRole("heading", { name: "選択中の履歴" })).toBeVisible();
+    expect(screen.getByText(/現在の下書きと生成時の入力は同じです/)).toBeVisible();
+    rendered.rerender(<StudioContext.Provider value={{ ...studio, draft: { ...studio.draft, transparent: true } }}><CreateView onSaveTemplate={vi.fn()} /></StudioContext.Provider>);
+    expect(screen.getByText(/現在の下書きと生成時の入力は異なります/)).toBeVisible();
+  });
+
+  it("今回の生成は進行中と完成を区別し、入力の編集後も元入力を維持する", () => {
+    const running: ImageSource = { ...completed, status: "running", image: undefined };
+    const studio = context({ jobs: [running], recentGenerationIds: [running.id] });
+    const rendered = renderView(studio);
+    expect(screen.getByRole("heading", { name: "今回の生成" })).toBeVisible();
+    expect(screen.getAllByText("生成中")[0]).toBeVisible();
+    rendered.rerender(<StudioContext.Provider value={{ ...studio, jobs: [completed] }}><CreateView onSaveTemplate={vi.fn()} /></StudioContext.Provider>);
+    expect(screen.getByRole("heading", { name: "今回の生成結果" })).toBeVisible();
+    expect(screen.getByText(/現在の下書きと生成時の入力は異なります/)).toBeVisible();
+  });
+
+  it("過去画像を選択中でも今回の進行状況を別に表示し、今回の生成へ戻れる", async () => {
+    const running: ImageSource = { ...completed, id: "new-image", status: "running", image: undefined, batch: undefined };
+    const studio = context({ jobs: [running, completed], recentGenerationIds: [running.id] });
+    const user = userEvent.setup();
+    renderView(studio);
+    expect(screen.getByRole("heading", { name: "選択中の履歴" })).toBeVisible();
+    expect(screen.getByText(/今回の生成：完成 0\/1枚 · 進行中/)).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "今回の生成を見る" }));
+    expect(studio.select).toHaveBeenCalledExactlyOnceWith(running.id);
+    expect(studio.updateDraft).not.toHaveBeenCalled();
+  });
+
+  it("新しい生成の開始待ちと、表示中の過去画像を区別する", () => {
+    renderView(context({ submitting: true }));
+    expect(screen.getByText("新しい生成を開始しています。下の表示は開始前の履歴です。")).toHaveAttribute("role", "status");
+    expect(screen.getByRole("heading", { name: "選択中の履歴" })).toBeVisible();
+  });
+
+  it("履歴がない場合は元入力の確認を表示せず空の案内を表示する", () => {
+    renderView(context({ jobs: [], selectedId: null }));
+    expect(screen.getByRole("heading", { name: "最初の一枚をつくりましょう" })).toBeVisible();
+    expect(screen.queryByText("この履歴の元の入力を確認")).not.toBeInTheDocument();
+  });
   it("入力の開閉をキーボードで操作でき、下書き・設定と生成への到達を維持する", async () => {
     const studio = context();
     studio.generate = vi.fn();

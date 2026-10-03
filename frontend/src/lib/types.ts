@@ -49,6 +49,7 @@ export type StudioContextValue = {
   view: View;
   navigate: (view: View, id?: string, batchId?: string) => void;
   selectedId: string | null;
+  recentGenerationIds: string[];
   select: (id: string | null) => void;
   graphBatchId: string;
   setGraphBatchId: (id: string) => void;

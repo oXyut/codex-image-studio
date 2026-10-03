@@ -47,6 +47,7 @@ function context(
     view: "history",
     navigate: vi.fn(),
     selectedId: image.id,
+    recentGenerationIds: [],
     select: vi.fn(),
     graphBatchId: "",
     setGraphBatchId: vi.fn(),

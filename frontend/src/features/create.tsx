@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { dateLabel, imageTitle, statusLabels, styleLabels } from "@/lib/format";
+import { draftMatchesSource, previewOrigin } from "@/lib/create-preview";
 import { useStudio } from "@/lib/studio-context";
 import { cn } from "@/lib/utils";
 import { canvasSizeLabel } from "@shared/canvas-options.js";
@@ -58,6 +59,10 @@ export function CreateView({
   const fullPrompt = composePrompt(d.prompt, d.layers),
     source =
       studio.jobs.find((j) => j.id === studio.selectedId) || studio.jobs[0];
+  const recentGeneration = studio.jobs.filter((job) =>
+    (studio.recentGenerationIds || []).includes(job.id),
+  );
+  const showingRecentGeneration = source && recentGeneration.some((job) => job.id === source.id);
   const siblings = source?.batch
     ? studio.jobs
         .filter((j) => j.batch?.id === source.batch?.id)
@@ -569,10 +574,10 @@ export function CreateView({
           aria-label="生成結果"
           className="create-result studio-result flex min-h-[540px] min-w-0 flex-1 flex-col bg-[#fafafa] md:min-h-0"
         >
-          <header className="flex min-h-16 items-center justify-between gap-3 border-b bg-white px-5 lg:px-7">
-            <div>
+          <header className="flex min-h-16 flex-wrap items-center justify-between gap-3 border-b bg-white px-5 py-3 lg:px-7">
+            <div className="min-w-0 flex-1 basis-40">
               <h2 className="font-medium">
-                {source?.batch ? "生成結果" : "プレビュー"}
+                {source ? previewOrigin(source, studio.selectedId, studio.recentGenerationIds || []) : "生成結果"}
               </h2>
               <p className="text-xs text-muted-foreground">
                 {source
@@ -616,8 +621,58 @@ export function CreateView({
             )}
           </header>
           <div className="flex min-h-0 flex-1 flex-col items-center justify-start p-5 lg:p-7">
+            {studio.submitting && (
+              <p role="status" className="mb-4 w-full max-w-4xl rounded-lg border bg-white p-3 text-sm">
+                新しい生成を開始しています。{source && "下の表示は開始前の履歴です。"}
+              </p>
+            )}
+            {!studio.submitting && !showingRecentGeneration && recentGeneration.length > 0 && (
+              <div role="status" className="mb-4 flex w-full max-w-4xl flex-wrap items-center justify-between gap-2 rounded-lg border bg-white p-3 text-sm">
+                <p>
+                  今回の生成：完成 {recentGeneration.filter((job) => job.status === "succeeded").length}/{recentGeneration.length}枚
+                  {recentGeneration.some((job) => ["queued", "running"].includes(job.status)) ? " · 進行中" : " · 終了"}
+                  {["failed", "cancelled"].map((status) => {
+                    const count = recentGeneration.filter((job) => job.status === status).length;
+                    return count ? ` · ${statusLabels[status]} ${count}枚` : "";
+                  })}
+                  <span className="mt-1 block text-xs text-muted-foreground">下には過去の履歴を表示しています。</span>
+                </p>
+                <Button variant="outline" size="sm" onClick={() => studio.select(recentGeneration[0].id)}>
+                  今回の生成を見る
+                </Button>
+              </div>
+            )}
             {source ? (
               <>
+                <div className="mb-4 w-full max-w-4xl min-w-0 space-y-2">
+                  <h3 className="break-words text-base font-medium">{imageTitle(source)}</h3>
+                  <p className="text-xs text-muted-foreground">
+                    {draftMatchesSource(d, source)
+                      ? "現在の下書きと生成時の入力は同じです。"
+                      : "現在の下書きと生成時の入力は異なります。"}
+                    {source.image ? " 表示中の画像は、この履歴に保存された結果です。" : " この履歴の状態を表示しています。"}
+                  </p>
+                  <details key={source.id} className="rounded-lg border bg-white text-sm">
+                    <summary className="cursor-pointer rounded-lg px-3 py-2 focus-visible:outline-2 focus-visible:outline-ring">この履歴の元の入力を確認</summary>
+                    <div className="max-h-60 space-y-3 overflow-y-auto border-t p-3">
+                      <p className="text-xs text-muted-foreground">生成時の合成プロンプト</p>
+                      <p className="whitespace-pre-wrap break-words">{source.prompt || composePrompt(source.basePrompt || "", source.layers) || "入力の記録がありません。"}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {canvasSizeLabel(source.size, { full: true })} · {styleLabels[source.style || "auto"]} · {source.transparent ? "透過あり" : "透過なし"}
+                      </p>
+                      {Boolean(source.references?.length) && (
+                        <div className="space-y-1">
+                          <p className="text-xs text-muted-foreground">参照画像</p>
+                          {source.references!.map((reference) => {
+                            const id = reference.jobId || reference.uploadId;
+                            const referenceSource = sources.find((item) => item.id === id);
+                            return <p key={id} className="break-words">{referenceSource ? imageTitle(referenceSource) : "参照画像の記録がありません"} · {referenceRoles.find(([role]) => role === reference.role)?.[1] || reference.role}</p>;
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  </details>
+                </div>
                 <ImageContextMenu source={source}>
                   <div
                     tabIndex={0}
@@ -625,7 +680,7 @@ export function CreateView({
                     className={cn(
                       "relative flex min-h-0 w-full max-w-4xl rounded-lg border bg-white shadow-sm",
                       source.image
-                        ? "aspect-[3/2] items-center justify-center overflow-hidden"
+                        ? "aspect-[3/2] min-h-40 items-center justify-center overflow-hidden"
                         : "shrink-0 p-5 sm:p-6",
                     )}
                   >
@@ -634,7 +689,7 @@ export function CreateView({
                         <img
                           src={source.image.url}
                           alt={imageTitle(source)}
-                          className={`max-h-[calc(100dvh-360px)] min-h-40 max-w-full object-contain ${source.transparent ? "checkerboard" : ""}`}
+                          className={`size-full object-contain ${source.transparent ? "checkerboard" : ""}`}
                         />
                         <Button
                           variant="secondary"
