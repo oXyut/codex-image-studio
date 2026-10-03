@@ -93,11 +93,13 @@ export function ImageInspector({
   mode = "history",
   onClose,
   showPreview = true,
+  recoveryLayout = false,
 }: {
   source: ImageSource;
   mode?: "history" | "lineage";
   onClose?: () => void;
   showPreview?: boolean;
+  recoveryLayout?: boolean;
 }) {
   const studio = useStudio();
   const id = useId();
@@ -195,21 +197,64 @@ export function ImageInspector({
     }
   }
 
+  const generationSettings = (
+    <dl
+      className="grid grid-cols-[auto_1fr] gap-x-5 gap-y-3 text-sm"
+    >
+      <dt className="text-muted-foreground">サイズ</dt>
+      <dd className="text-right">
+        {uploaded && source.image?.width
+          ? `${source.image.width} × ${source.image.height}px`
+          : canvasSizeLabel(source.size, { full: true })}
+      </dd>
+      {!uploaded && (
+        <>
+          <dt className="text-muted-foreground">スタイル</dt>
+          <dd className="text-right">
+            {styleLabels[source.style || "auto"] || source.style}
+          </dd>
+          <dt className="text-muted-foreground">背景透過</dt>
+          <dd className="text-right">
+            {source.transparent ? "リクエストあり" : "なし"}
+          </dd>
+          <dt className="text-muted-foreground">参照画像</dt>
+          <dd className="text-right">{source.references?.length || 0}枚</dd>
+          <dt className="text-muted-foreground">テンプレート</dt>
+          <dd className="text-right">{source.layers?.length || 0}件</dd>
+        </>
+      )}
+      {typeof source.image?.bytes === "number" && (
+        <>
+          <dt className="text-muted-foreground">ファイル</dt>
+          <dd className="text-right">
+            {(source.image.bytes / 1024 / 1024).toFixed(1)} MB
+          </dd>
+        </>
+      )}
+    </dl>
+  );
+
   return (
-    <div className="image-inspector flex h-full min-h-0 flex-col bg-background">
-      <div className="flex shrink-0 items-center justify-between border-b px-5 py-4">
-        <h2 className="font-semibold">画像の詳細</h2>
-        {onClose && (
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={onClose}
-            aria-label="画像の詳細を閉じる"
-          >
-            <X className="size-4" />
-          </Button>
-        )}
-      </div>
+    <div
+      className={recoveryLayout
+        ? "image-inspector flex max-h-[calc(90dvh-5rem)] min-h-0 flex-col bg-background"
+        : "image-inspector flex h-full min-h-0 flex-col bg-background"}
+    >
+      {!recoveryLayout && (
+        <div className="flex shrink-0 items-center justify-between border-b px-5 py-4">
+          <h2 className="font-semibold">画像の詳細</h2>
+          {onClose && (
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={onClose}
+              aria-label="画像の詳細を閉じる"
+            >
+              <X className="size-4" />
+            </Button>
+          )}
+        </div>
+      )}
       <div className="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain p-5">
         {showPreview && (
           <ImageContextMenu source={source}>
@@ -398,39 +443,24 @@ export function ImageInspector({
             )}
           </div>
         </div>
-        <dl className="grid grid-cols-[auto_1fr] gap-x-5 gap-y-3 border-t pt-5 text-sm">
-          <dt className="text-muted-foreground">サイズ</dt>
-          <dd className="text-right">
-            {uploaded && source.image?.width
-              ? `${source.image.width} × ${source.image.height}px`
-              : canvasSizeLabel(source.size, { full: true })}
-          </dd>
-          {!uploaded && (
-            <>
-              <dt className="text-muted-foreground">スタイル</dt>
-              <dd className="text-right">
-                {styleLabels[source.style || "auto"] || source.style}
-              </dd>
-              <dt className="text-muted-foreground">背景透過</dt>
-              <dd className="text-right">
-                {source.transparent ? "リクエストあり" : "なし"}
-              </dd>
-              <dt className="text-muted-foreground">参照画像</dt>
-              <dd className="text-right">{source.references?.length || 0}枚</dd>
-              <dt className="text-muted-foreground">テンプレート</dt>
-              <dd className="text-right">{source.layers?.length || 0}件</dd>
-            </>
+        <Accordion
+          type="multiple"
+          defaultValue={recoveryLayout ? ["prompt"] : []}
+          className="space-y-3"
+        >
+          {!recoveryLayout && (
+            <AccordionItem value="settings" className="rounded-lg border px-3">
+              <AccordionTrigger className="text-sm">
+                生成設定・ファイル情報
+              </AccordionTrigger>
+              <AccordionContent className="space-y-4">
+                {generationSettings}
+                <p className="break-all text-sm text-muted-foreground">
+                  ID: {source.id}
+                </p>
+              </AccordionContent>
+            </AccordionItem>
           )}
-          {typeof source.image?.bytes === "number" && (
-            <>
-              <dt className="text-muted-foreground">ファイル</dt>
-              <dd className="text-right">
-                {(source.image.bytes / 1024 / 1024).toFixed(1)} MB
-              </dd>
-            </>
-          )}
-        </dl>
-        <Accordion type="multiple" className="space-y-3">
           {!uploaded && (
             <AccordionItem value="prompt" className="rounded-lg border px-3">
               <AccordionTrigger className="text-sm">
@@ -469,6 +499,15 @@ export function ImageInspector({
                     </p>
                   </details>
                 )}
+              </AccordionContent>
+            </AccordionItem>
+          )}
+          {recoveryLayout && (
+            <AccordionItem value="settings" className="rounded-lg border px-3">
+              <AccordionTrigger className="text-sm">生成時の設定</AccordionTrigger>
+              <AccordionContent className="space-y-4">
+                {generationSettings}
+                <p className="break-all text-sm text-muted-foreground">ID: {source.id}</p>
               </AccordionContent>
             </AccordionItem>
           )}
@@ -581,9 +620,6 @@ export function ImageInspector({
             </AccordionItem>
           )}
         </Accordion>
-        <p className="break-all text-sm text-muted-foreground">
-          ID: {source.id}
-        </p>
       </div>
     </div>
   );
