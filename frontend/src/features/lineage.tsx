@@ -400,7 +400,10 @@ export function LineageView() {
   const flowEdges = useMemo<Edge[]>(
     () => {
       const batchByNode = new Map(layout.batchGroups.flatMap((group) => group.nodeIds.map((id) => [id, group] as const)));
-      return buildLineageDisplayEdges(visible.edges, layout.batchGroups).map((edge, index) => {
+      return buildLineageDisplayEdges(
+        visible.edges.filter((edge) => edge.kind === "reference"),
+        layout.batchGroups,
+      ).map((edge, index) => {
         const selected = edge.targetIds.some((id) => id === studio.selectedId);
         const targetTitle = edge.targetGroup
           ? `${lineageBatchLabel(edge.targetGroup.id)}（表示${edge.targetIds.length}枚）`
@@ -423,7 +426,6 @@ export function LineageView() {
           style: {
             stroke: selected ? "#18181b" : "#71717a",
             strokeWidth: selected ? 2 : 1.5,
-            ...(edge.kind === "source" ? { strokeDasharray: "6 5" } : {}),
           },
           ariaLabel: `${lineageTitle(graph.nodeMap.get(edge.from))}から${targetTitle}への${edge.label}`,
         };
@@ -675,10 +677,6 @@ export function LineageView() {
               <span className="flex items-center gap-2">
                 <span className="w-7 border-t border-zinc-600" />
                 画像を参照
-              </span>
-              <span className="flex items-center gap-2">
-                <span className="w-7 border-t border-dashed border-zinc-600" />
-                入力を再利用
               </span>
               <span className="flex items-center gap-2">
                 <span className="size-4 rounded border border-indigo-200 bg-indigo-50" />
