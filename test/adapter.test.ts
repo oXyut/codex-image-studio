@@ -43,6 +43,25 @@ test('構造化されたネイティブ画像イベントからPNGを保存す�
   const result = await new CodexAdapter({ binary }).generate(validateInput({ prompt: 'a red cup' }), { workspace: join(root, 'workspace'), onProgress: text => messages.push(text) });
   assert.equal(result.mime, 'image/png'); assert.ok(messages.length >= 3); assert.equal(imageType(await readFile(join(root, result.fileName))).mime, 'image/png');
 });
+test('CLIの既定モデルに依存せず、次ページのLunaとmediumを指定し、明示したモデルも使える', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'studio-model-settings-')); t.after(() => rm(root, { recursive: true, force: true }));
+  for (const [name, model, expected] of [
+    ['default', undefined, 'gpt-6-luna'],
+    ['empty', '', 'gpt-6-luna'],
+    ['override', 'test-default', 'test-default'],
+  ] as const) {
+    const workspace = join(root, name);
+    await new CodexAdapter({ binary, model }).generate(validateInput({ prompt: 'MODEL_SETTINGS_CHECK' }), { workspace });
+    const captured = JSON.parse(await readFile(join(workspace, 'captured-model-settings.json'), 'utf8'));
+    assert.deepEqual(captured, { model: expected, effort: 'medium' });
+  }
+});
+test('Lunaが使えない場合はCLIの既定モデルへ切り替えず停止する', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'studio-no-luna-')); t.after(() => rm(root, { recursive: true, force: true }));
+  const original = process.env.FAKE_DISABLE_LUNA; process.env.FAKE_DISABLE_LUNA = '1';
+  try { await assert.rejects(new CodexAdapter({ binary }).generate(validateInput({ prompt: 'cat' }), { workspace: join(root, 'workspace') }), { code: 'MODEL_UNAVAILABLE' }); }
+  finally { if (original === undefined) delete process.env.FAKE_DISABLE_LUNA; else process.env.FAKE_DISABLE_LUNA = original; }
+});
 test('CLIが文章だけを返した場合は成功扱いにしない', async t => {
   const root = await mkdtemp(join(tmpdir(), 'studio-no-image-')); t.after(() => rm(root, { recursive: true, force: true }));
   await assert.rejects(new CodexAdapter({ binary }).generate(validateInput({ prompt: 'NO_IMAGE' }), { workspace: join(root, 'workspace') }), { code: 'IMAGE_TOOL_UNAVAILABLE' });

@@ -25,10 +25,10 @@ export function cliEnvironment(source = process.env) {
 }
 
 export class CodexAdapter {
-  binary: string; model?: string; timeoutMs: number; healthCache: { at: number; value: Health } | null = null;
+  binary: string; model: string; timeoutMs: number; healthCache: { at: number; value: Health } | null = null;
   constructor({ binary = process.env.CODEX_BIN || 'codex', model = process.env.CODEX_MODEL, timeoutMs = 600000 }: { binary?: string; model?: string; timeoutMs?: number } = {}) {
     this.binary = binary;
-    this.model = model;
+    this.model = model?.trim() || 'gpt-6-luna';
     this.timeoutMs = timeoutMs;
     this.healthCache = null;
   }
@@ -150,10 +150,14 @@ export class CodexAdapter {
       rpc.notify('initialized', {});
       const account = await rpc.request('account/read', { refreshToken: false });
       if (account.account?.type !== 'chatgpt') throw new AppError('ChatGPT認証が必要です。codex login でログインしてください。', 'CHATGPT_LOGIN_REQUIRED', 503);
-      const catalog = await rpc.request('model/list', { includeHidden: false });
-      const available = catalog.data ?? [];
-      const model = this.model ? available.find(m => m.model === this.model || m.id === this.model) : available.find(m => m.isDefault) || available[0];
-      if (!model) throw new AppError(this.model ? 'CODEX_MODELで指定したモデルを利用できません。.envの設定を確認してください。' : '利用可能なCodexモデルが見つかりませんでした。', 'MODEL_UNAVAILABLE', 503);
+      let model: NonNullable<RpcResults['model/list']['data']>[number] | undefined;
+      let cursor: string | null | undefined;
+      do {
+        const catalog = await rpc.request('model/list', { includeHidden: false, ...(cursor ? { cursor } : {}) });
+        model = catalog.data?.find(m => m.model === this.model || m.id === this.model);
+        cursor = catalog.nextCursor;
+      } while (!model && cursor);
+      if (!model) throw new AppError('選択されたモデルを利用できません。CODEX_MODELの設定を確認してください。', 'MODEL_UNAVAILABLE', 503);
       onProgress('Codexに画像生成を依頼しています。');
       const thread = await rpc.request('thread/start', {
         cwd: workspace, ephemeral: true, sandbox: 'workspace-write', approvalPolicy: 'never', modelProvider: 'openai',
@@ -166,7 +170,7 @@ export class CodexAdapter {
         ? 'Automatic aspect ratio: choose the canvas aspect ratio and dimensions that best fit the image description and, when applicable, the reference composition. Do not impose a fixed ratio or dimensions.'
         : `Requested dimensions: ${sizes[input.size]}. Requested aspect ratio: ${aspectRatios[input.size]}. Match this aspect ratio in the generated image.`;
       const prompt = `Generate one image using image_gen.imagegen. ${canvasInstruction} ${styleDescriptions[input.style]} Pass transparent_background=${input.transparent ? 'true' : 'false'}.\nImage description (JSON-encoded): ${JSON.stringify(input.prompt)}${referenceInstruction}\nReturn the generated image. Do not substitute code, SVG or text for an image.`;
-      await rpc.request('turn/start', { threadId: thread.thread.id, input: [{ type: 'text', text: prompt }, ...localReferences.map(reference => ({ type: 'localImage', path: reference.path }))],
+      await rpc.request('turn/start', { threadId: thread.thread.id, effort: 'medium', input: [{ type: 'text', text: prompt }, ...localReferences.map(reference => ({ type: 'localImage', path: reference.path }))],
         sandboxPolicy: { type: 'workspaceWrite', writableRoots: [workspace], networkAccess: false } });
       await completed.promise.catch(error => {
         if (!images.size || signal?.aborted || record(error).code === 'CANCELLED') throw error;

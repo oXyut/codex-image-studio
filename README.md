@@ -148,7 +148,7 @@ npm run dev
 | `PORT` | `4317` | ローカルHTTPポート |
 | `LAN_HOST` | 無効 | 同じWi-Fiのスマホ接続に使う、このMacのプライベートIPv4 |
 | `CODEX_BIN` | `codex` | 公式CLIの実行ファイルパス |
-| `CODEX_MODEL` | CLIが返すモデル一覧の既定モデル | アカウントで利用できるCodexモデル |
+| `CODEX_MODEL` | `gpt-6-luna` | アカウントで利用できるCodexモデル。推論量は`medium`（Middle） |
 | `GENERATION_TIMEOUT_MS` | `600000` | 生成待ちの上限。30秒〜30分 |
 | `GENERATION_CONCURRENCY` | `5` | 最大同時生成数。1〜10件 |
 | `DATA_DIR` | アプリ内の`data` | 履歴・画像の保存先 |
@@ -173,7 +173,7 @@ QRコードはアプリ内で生成します。QRコードには番号とは別�
 
 Codex 0.156.1で提供されるツール名は`image_gen.imagegen`です。画像生成機能が使うCLI内の実行ホストは有効にしたまま、シェルや外部連携を無効にしています。
 
-モデルは`model/list`の既定モデルを採用するため、既存のCLI設定に利用できないモデル名が残っていても引き継ぎません。`CODEX_MODEL`を指定する場合も、一覧に存在することを確認してから使用します。
+既定モデルはGPT-6 Luna（`gpt-6-luna`）です。`CODEX_MODEL`が未指定・空欄でも、CLI側の既定モデルや設定に依存せずLunaを選択します。`CODEX_MODEL`で別のモデルを明示した場合は、その指定を優先します。`model/list`の全ページから選択したモデルを確認し、利用できない場合は別モデルへ切り替えずエラーにします。推論量は`turn/start`で`effort: "medium"`（Middle）を明示します。
 
 ## 認証と利用枠
 

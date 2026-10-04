@@ -32,6 +32,7 @@ export type RpcResults = {
   'account/read': { account?: { type?: string } | null };
   'model/list': {
     data?: { id: string; model: string; isDefault?: boolean }[];
+    nextCursor?: string | null;
   };
   'thread/start': { thread: { id: string } };
   'turn/start': unknown;

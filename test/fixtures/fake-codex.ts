@@ -9,22 +9,32 @@ if (args.includes('list')) { console.log('image_generation stable true'); proces
 const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jF7cAAAAASUVORK5CYII=';
 function send(message: unknown) { process.stdout.write(`${JSON.stringify(message)}\n`); }
 let workspace = "";
+let selectedModel = "";
+const models = [
+  { id: 'gpt-6-astra', model: 'gpt-6-astra', isDefault: true },
+  { id: 'test-default', model: 'test-default', isDefault: false },
+  ...(process.env.FAKE_DISABLE_LUNA ? [] : [{ id: 'gpt-6-luna', model: 'gpt-6-luna', isDefault: false }]),
+];
 createInterface({ input: process.stdin }).on('line', async line => {
   const { id, method, params } = JSON.parse(line) as {
-    id: number; method: string; params: { cwd: string; model: string; input: { type: string; text: string; path: string }[] };
+    id: number; method: string; params: { cwd: string; model: string; cursor?: string; effort?: string; input: { type: string; text: string; path: string }[] };
   };
   if (method === 'initialize') send({ id, result: {} });
   if (method === 'account/read') send({ id, result: { account: { type: process.env.FAKE_AUTH || 'chatgpt' } } });
-  if (method === 'model/list') send({ id, result: { data: [{ id: 'test-default', model: 'test-default', isDefault: true }] } });
+  if (method === 'model/list') send({ id, result: {
+    data: params.cursor ? models.slice(2) : models.slice(0, 2),
+    nextCursor: !params.cursor && models.length > 2 ? 'luna-page' : null,
+  } });
   if (method === 'thread/start') {
     workspace = params.cwd;
-    if (params.model !== 'test-default') send({ id, error: { message: 'The model must come from the advertised catalog' } });
-    else send({ id, result: { thread: { id: 'test-thread' } } });
+    if (!models.some(model => model.model === params.model)) send({ id, error: { message: 'The model must come from the advertised catalog' } });
+    else { selectedModel = params.model; send({ id, result: { thread: { id: 'test-thread' } } }); }
   }
   if (method === 'turn/start') {
     if (!params.input[0].text.includes('image_gen.imagegen')) throw new Error('Must invoke the installed image tool by its actual name');
     send({ id, result: { turn: { id: 'test-turn' } } });
     const prompt = params.input[0].text;
+    if (prompt.includes('MODEL_SETTINGS_CHECK')) await writeFile(join(workspace, 'captured-model-settings.json'), JSON.stringify({ model: selectedModel, effort: params.effort }));
     if (prompt.includes('REFERENCE_TOOL_CHECK')) {
       const refs = params.input.filter(input => input.type === 'localImage');
       if (refs.length !== 1 || !prompt.includes(`referenced_image_paths=${JSON.stringify(refs.map(ref => ref.path))}`)) throw new Error('Reference paths must match localImage inputs');
